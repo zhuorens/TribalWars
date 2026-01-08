@@ -7,7 +7,9 @@ const CONFIG = {
     marketCapacityPerLevel: 1000, // How many resources 1 level can carry
     buildQueueLimit: 5,
     
-    // NEW: AI Attack Settings
+    aiGrowthInterval: 360 * 60 * 1000, // Enemies try to build every 6 hours
+    aiGrowthChance: 0.3, // 50% chance to succeed per check
+
     aiAttackEnabled: true,
     aiAttackInterval: 20 * 60 * 1000, // Check for attack every 10 minutes
     aiAttackChance: 0.1, // 30% chance to attack when interval hits

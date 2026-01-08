@@ -39,24 +39,52 @@ const engine = {
         return `${rand(adjs)} ${rand(nouns)}${suffix}`;
     },
 
+    rand: function(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; },
+
     createVillage: function (x, y, name, owner) {
         let builds = {};
-        for (let b in DB.buildings) builds[b] = (b === "Headquarters" || b.includes("Camp") || b.includes("Pit") || b.includes("Mine") || b === "Farm" || b === "Warehouse") ? 1 : 0;
+        
+        // Default Setup (Player/Barbarian Base)
+        for (let b in DB.buildings) {
+            if (b === "Headquarters" || b === "Farm" || b === "Warehouse") {
+                builds[b] = 1;
+            } else if (b.includes("Camp") || b.includes("Pit") || b.includes("Mine")) {
+                builds[b] = 3; 
+            } else {
+                builds[b] = 0; 
+            }
+        }
+
         let units = {}; for (let u in DB.units) units[u] = 0;
         let techs = {}; for (let u in DB.units) techs[u] = 1;
 
+        // --- ENEMY RANDOMIZATION ---
         if (owner === "enemy") {
-            builds["Wall"] = 5; builds["Barracks"] = 5; builds["Headquarters"] = 10; builds["Farm"] = 15; builds["Warehouse"] = 15;
-            builds["Timber Camp"] = 12; builds["Clay Pit"] = 12; builds["Iron Mine"] = 12;
-            units["Spear"] = 300; units["Sword"] = 300; units["Heavy Cav"] = 50; units["Scout"] = 50;
+            // Randomize Buildings (e.g., Wall 3-7 instead of fixed 5)
+            const r = engine.rand; 
+            builds["Wall"] = r(1, 3); 
+            builds["Barracks"] = r(1, 5); 
+            builds["Headquarters"] = r(2, 10); 
+            builds["Farm"] = r(2, 10); 
+            builds["Warehouse"] = r(10, 18);
+            builds["Timber Camp"] = r(10, 15); 
+            builds["Clay Pit"] = r(10, 15); 
+            builds["Iron Mine"] = r(10, 15);
+            builds["Smithy"] = r(0, 4);
+            builds["Market"] = r(0, 4);
+
+            // Randomize Units
+            units["Spear"] = r(200, 500); 
+            units["Sword"] = r(200, 500); 
+            units["Heavy Cav"] = r(20, 80); 
+            units["Scout"] = r(20, 100);
+            if(Math.random() > 0.7) units["Ram"] = r(10, 30);
         }
 
         const v = {
             id: Date.now() + Math.random(), x: x, y: y, name: name, owner: owner,
             res: [500, 500, 500], buildings: builds, units: units, techs: techs,
-            // NEW: Separate Queues
             queues: { build: [], research: [], barracks: [], stable: [], workshop: [], academy: [] },
-            // NEW: Stationed troops (Support from others)
             stationed: [],
             loyalty: 100, points: 0
         };
@@ -135,8 +163,9 @@ const engine = {
         const dt = (Date.now() - state.lastTick) / 1000;
         state.lastTick = Date.now();
     
+        // 1. PRODUCTION & QUEUES (Runs for Player AND Enemies)
         state.villages.forEach(v => {
-            // Production
+            // Production (Enemies generate resources here too!)
             const cap = engine.getStorage(v);
             const wood = (30 * Math.pow(1.16, v.buildings["Timber Camp"])) / 3600 * dt;
             const clay = (30 * Math.pow(1.16, v.buildings["Clay Pit"])) / 3600 * dt;
@@ -154,10 +183,21 @@ const engine = {
                 if (q.length > 0) {
                     const item = q[0];
                     if (!item.finish) item.finish = Date.now() + item.duration;
+                    
                     if (Date.now() >= item.finish) {
                         action(q.shift());
-                        // Force point update immediately when a building finishes
-                        if(type === 'build') engine.updatePoints(); 
+                        // Update points immediately when a building finishes
+                        if(type === 'build') {
+                            v.points = engine.calculatePoints(v);
+                            // Update map data cache if it exists
+                            if (state.mapData[`${v.x},${v.y}`]) state.mapData[`${v.x},${v.y}`].points = v.points;
+                        }
+                        
+                        // Start next item immediately if exists
+                        if (q.length > 0) {
+                            q[0].finish = Date.now() + q[0].duration;
+                        }
+                        
                         ui.refresh();
                     }
                 }
@@ -170,26 +210,53 @@ const engine = {
             });
         });
     
-        // --- POINTS UPDATE ---
-        // Moved the manual calc logic into the shared function
-        engine.updatePoints(); 
-    
+        // 2. AI VILLAGE GROWTH (New Logic)
+        const now = Date.now();
+        if (!state.nextAiGrowth) state.nextAiGrowth = now + CONFIG.aiGrowthInterval;
+        
+        if (now > state.nextAiGrowth) {
+            state.nextAiGrowth = now + CONFIG.aiGrowthInterval;
+            
+            state.villages.forEach(v => {
+                if (v.owner === 'enemy' || v.owner === 'barb') {
+                    // Try to upgrade a random building
+                    if (Math.random() < CONFIG.aiGrowthChance) {
+                        const bKeys = Object.keys(v.buildings);
+                        const randBuild = bKeys[Math.floor(Math.random() * bKeys.length)];
+                        
+                        // Hard cap at level 30 to prevent bugs
+                        if (v.buildings[randBuild] < 30) {
+                            v.buildings[randBuild]++;
+                            // Update points so the map reflects the growth
+                            v.points = engine.calculatePoints(v);
+                            if (state.mapData[`${v.x},${v.y}`]) state.mapData[`${v.x},${v.y}`].points = v.points;
+                        }
+                    }
+                    
+                    // Slow troop recruitment for enemies
+                    if (v.owner === 'enemy' && Math.random() < 0.3) {
+                         v.units["Spear"] = (v.units["Spear"] || 0) + 10;
+                         v.units["Sword"] = (v.units["Sword"] || 0) + 10;
+                    }
+                }
+            });
+            // Refresh map if open to show new points
+            if (document.getElementById('map').classList.contains('active')) ui.renderMap();
+        }
+
+        // 3. AI ATTACK SPAWNER
         if (CONFIG.aiAttackEnabled) {
-            const now = Date.now();
-            // Initialize timer if missing
             if (!state.nextAiCheck) state.nextAiCheck = now + CONFIG.aiAttackInterval;
 
             if (now > state.nextAiCheck) {
                 state.nextAiCheck = now + CONFIG.aiAttackInterval;
-                
-                // Only attack if random check passes
                 if (Math.random() < CONFIG.aiAttackChance) {
                     engine.spawnAiAttack();
                 }
             }
         }
 
-        // Missions
+        // 4. MISSIONS
         state.missions = state.missions.filter(m => {
             if (Date.now() >= m.arrival) { engine.resolveMission(m); return false; }
             return true;
