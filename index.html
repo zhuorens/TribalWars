@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tribal Wars V5</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div class="header">
+        <div class="top-row">
+            <div class="res-box">
+                <span title="Total Points" class="total-points">🌍 <span id="global-points">0</span></span>
+
+                <span title="Points">🏆 <span id="village-points">0</span></span>
+                <span title="Wood">🌲 <span id="res-wood">0</span></span>
+                <span title="Clay">🧱 <span id="res-clay">0</span></span>
+                <span title="Iron">🔩 <span id="res-iron">0</span></span>
+                <span title="Pop">👥 <span id="pop-current">0</span>/<span id="pop-max">0</span></span>
+                <span title="Storage">📦 <span id="storage-max">0</span></span>
+            </div>
+
+            <div class="village-controls">
+                <select id="village-select" onchange="ui.switchVillage(this.value)"></select>
+                <button class="btn-small" onclick="ui.renameVillage()">✏️</button>
+            </div>
+        </div>
+        <div id="queues-container" class="queue-bar"></div>
+    </div>
+
+    <div class="tabs">
+        <button id="tab-hq" class="tab-btn active" onclick="ui.showTab('hq', this)">Village</button>
+        <button id="tab-recruit" class="tab-btn" onclick="ui.showTab('recruit', this)">Recruit</button>
+        <button id="tab-map" class="tab-btn" onclick="ui.showTab('map', this)">Map</button>
+        <button id="tab-reports" class="tab-btn" onclick="ui.showTab('reports', this)">Reports</button>
+        <button id="tab-settings" class="tab-btn" onclick="ui.showTab('settings', this)">Settings</button>
+    </div>
+
+    <div class="container">
+
+        <div id="hq" class="tab-content active" style="height: 600px;">
+            <div id="village-map" class="village-map"></div>
+        </div>
+
+        <div id="recruit" class="tab-content">
+            <div id="unit-list" class="unit-grid"></div>
+        </div>
+
+        <div id="map" class="tab-content">
+            <button id="btn-return-home" class="btn" onclick="ui.centerMapOnVillage()">Return to Current
+                Village</button>
+
+            <div class="map-layout">
+                <div class="map-nav-btn empty"></div>
+                <div class="map-nav-btn btn" onclick="game.moveMap(0, -15)">⬆️</div>
+                <div class="map-nav-btn empty"></div>
+
+                <div class="map-nav-btn btn" onclick="game.moveMap(-15, 0)">⬅️</div>
+                <div id="map-grid" class="map-grid"></div>
+                <div class="map-nav-btn btn" onclick="game.moveMap(15, 0)">➡️</div>
+
+                <div class="map-nav-btn empty"></div>
+                <div class="map-nav-btn btn" onclick="game.moveMap(0, 15)">⬇️</div>
+                <div class="map-nav-btn empty"></div>
+            </div>
+
+            <div class="minimap-container">
+                <canvas id="minimap" width="150" height="150"></canvas>
+            </div>
+
+            <div style="text-align:center; margin-top:10px;">
+                <span lang="en">Center:</span><span lang="zh">中心:</span> 
+                <b id="map-center-coords">100|100</b>
+            </div>
+            <div id="active-missions"></div>
+        </div>
+
+        <div id="reports" class="tab-content">
+            <button id="btn-clear-history" class="btn" onclick="engine.clearReports()">Clear History</button>
+            <div id="report-list" class="report-list"></div>
+        </div>
+
+        <div id="settings" class="tab-content">
+            <h3 id="header-language">Language</h3>
+            <div style="margin-bottom: 15px;">
+                <button class="btn" onclick="ui.setLang('en')">English</button>
+                <button class="btn" onclick="ui.setLang('zh')">中文</button>
+            </div>
+
+            <h3 id="header-debug">Debug Tools</h3>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items: center;">
+                <button class="btn btn-blue" onclick="debug.addRes()">+10k Res</button>
+                <button class="btn btn-blue" onclick="debug.instantBuild()">Finish Queues</button>
+                <button class="btn btn-blue" onclick="debug.spawnEnemy()">Spawn Enemy</button>
+                <label><input type="checkbox" onchange="debug.toggleFastTravel(this)"> Instant Travel</label>
+            </div>
+
+            <h4 id="header-cheat">Building Cheat</h4>
+            <div style="display:flex; gap:5px; margin-bottom: 20px;">
+                <select id="cheat-building" style="padding:5px; min-width:120px;"></select>
+                <button class="btn" onclick="debug.maxSelectedBuilding()">Upgrade to Max</button>
+            </div>
+
+
+            <h3 id="header-save">Save Data</h3>
+            <div style="display:flex; gap:10px;">
+                <button id="btn-download" class="btn" onclick="engine.exportSave()">Download</button>
+                <input type="file" onchange="engine.importSave(this)">
+                <button id="btn-wipe" class="btn btn-red" onclick="engine.resetGame()">Wipe</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="building-modal" class="overlay">
+        <div class="modal">
+            <h2 id="b-modal-title">Building</h2>
+            <p id="b-modal-desc"></p>
+            <div id="b-modal-cost" class="cost-text"></div>
+            <div class="modal-actions">
+                <button id="btn-close-build" class="btn btn-red" onclick="ui.closeBuildingModal()">Close</button>
+                <button id="b-modal-btn" class="btn">Upgrade</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="attack-modal" class="overlay">
+        <div class="modal">
+            <h2 id="a-modal-title">Attack</h2>
+            <div id="a-modal-units"></div>
+            <div class="modal-actions">
+                <button class="btn btn-red" onclick="ui.closeAttackModal()">Cancel</button>
+                <button class="btn" onclick="game.launchAttack()">⚔️ March</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="report-modal" class="overlay" onclick="ui.closeReportModal()">
+        <div class="modal" style="width: 500px;" onclick="event.stopPropagation()">
+            <div id="r-modal-content"></div>
+            <button class="btn" onclick="ui.closeReportModal()" style="margin-top:10px; width:100%">Close</button>
+        </div>
+    </div>
+
+    <script src="data.js"></script>
+    <script src="strings.js"></script>
+    <script src="config.js"></script>
+    <script src="state.js"></script>
+    <script src="engine.js"></script>
+    <script src="ui.js"></script>
+    <script src="actions.js"></script>
+    <script src="debug.js"></script>
+    <script src="main.js"></script>
+</body>
+
+</html>
