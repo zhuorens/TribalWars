@@ -4,7 +4,8 @@ const engine = {
         if (localStorage.getItem("tw_v5_save")) {
             try {
                 // Load Save
-                state = { ...state, ...JSON.parse(localStorage.getItem("tw_v5_save")) };
+                var raw = localStorage.getItem('tw_v5_save');
+                state = { ...state, ...JSON.parse(LZString.decompressFromUTF16(raw)) };
                 if (!state.selectedVillageId && state.villages.length > 0) {
                     state.selectedVillageId = state.villages[0].id;
                 }
@@ -106,7 +107,7 @@ const engine = {
 
         const v = {
             id: Date.now() + Math.random(), x: x, y: y, name: name, owner: owner,
-            res: [500, 500, 500], buildings: builds, units: units, techs: techs,
+            res: [100, 100, 100], buildings: builds, units: units, techs: techs,
             queues: { build: [], research: [], barracks: [], stable: [], workshop: [], academy: [] },
             stationed: [],
             loyalty: 100, points: 0
@@ -632,7 +633,9 @@ const engine = {
         engine.save();
     },
 
-    save: function () { localStorage.setItem("tw_v5_save", JSON.stringify(state)); },
+    save: function () { 
+        var compressed = LZString.compressToUTF16(JSON.stringify(roundNumbers(state)));
+        localStorage.setItem('tw_v5_save', compressed); },
         
     exportSave: function() {
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));

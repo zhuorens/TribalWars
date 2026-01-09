@@ -4,7 +4,7 @@ const ui = {
 
     init: function () {
         ui.initCheatDropdown();
-        ui.updateInterfaceText(); // <--- Initializes text based on default LANG
+        ui.updateInterfaceText(); 
         ui.refresh();
         ui.showTab('hq', document.querySelector('.tab-btn'));
     },
@@ -21,14 +21,13 @@ const ui = {
         }
     },
 
-    // --- NEW: Language Switching Functions ---
     setLang: function (l) {
         if (!STRINGS[l]) { console.error("Language not found:", l); return; }
         LANG = l;
         ui.updateInterfaceText();
         ui.refresh();
         ui.renderMap();
-        ui.initCheatDropdown(); // Refresh dropdown names
+        ui.initCheatDropdown(); 
     },
 
     updateInterfaceText: function () {
@@ -112,7 +111,6 @@ const ui = {
         // Unit Queues
         ['barracks', 'stable', 'workshop', 'academy'].forEach(qName => {
             if (v.queues[qName].length > 0) {
-                // Translated Queue Header
                 qHTML += `<div style="font-size:10px; font-weight:bold; color:#666; margin-top:2px; text-transform:uppercase;">${T_Name(qName.charAt(0).toUpperCase() + qName.slice(1))}</div>`;
                 v.queues[qName].forEach((item, idx) => {
                     const rem = Math.max(0, item.finish - Date.now());
@@ -161,7 +159,6 @@ const ui = {
             const soonest = incomingAttacks.sort((a, b) => a.arrival - b.arrival)[0];
             const ms = Math.max(0, soonest.arrival - Date.now());
 
-            // TRANSLATED ALERT
             warningHtml = `
             <div style="background:#ffebee; border:2px solid #d32f2f; color:#d32f2f; padding:10px; margin-bottom:10px; text-align:center; animation:pulse 1s infinite;">
                 <div style="font-size:16px; font-weight:bold;">⚔️ ${T('incoming_attack')}</div>
@@ -203,11 +200,11 @@ const ui = {
         }
         unitHtml += '</table>';
 
+        // FIX: Using 60 as base to match your engine.js
         const woodRate = Math.floor(60 * Math.pow(1.16, v.buildings["Timber Camp"]));
         const clayRate = Math.floor(60 * Math.pow(1.16, v.buildings["Clay Pit"]));
         const ironRate = Math.floor(60 * Math.pow(1.16, v.buildings["Iron Mine"]));
 
-        // TRANSLATED HEADERS
         info.innerHTML = `
         ${warningHtml}
         <h4 style="margin-top:0">${T('production')} / hr</h4>
@@ -255,7 +252,6 @@ const ui = {
 
                 let btnHtml = "";
                 if (isLocked) {
-                    // TRANSLATED DISABLED BUTTON
                     btnHtml = `<button class="btn" style="width:100%; background:#ccc; color:#666; border:1px solid #999;" disabled>${T('requires')} ${T_Name(b)}</button>`;
                 } else {
                     btnHtml = `
@@ -324,7 +320,6 @@ const ui = {
             ? `<button class="btn btn-blue" onclick="ui.closeAttackModal(); ui.openMarketModal(${target.id})">💰 ${T('transport')}</button>`
             : '';
 
-        // TRANSLATED BUTTONS
         if (isMyVillage) {
             footer.innerHTML = `
                 <button class="btn btn-red" onclick="ui.closeAttackModal()">${T('btn_cancel')}</button>
@@ -345,7 +340,6 @@ const ui = {
 
     openTroopsModal: function () {
         const v = engine.getCurrentVillage();
-        // TRANSLATED HEADERS
         let html = `<h3>${T('stationed_here')}</h3>`;
 
         if (!v.stationed || v.stationed.length === 0) {
@@ -448,10 +442,8 @@ const ui = {
         const v = engine.getCurrentVillage();
         const d = DB.buildings[bName];
 
-        // --- 1. SMITHY HANDLING ---
         if (bName === "Smithy") {
             document.getElementById('b-modal-title').innerText = T_Name("Smithy");
-            // Hardcoded description, could be added to DB/Strings later
             document.getElementById('b-modal-desc').innerText = "Research units and upgrade the building.";
 
             let html = "<div style='display:grid; grid-template-columns: 1fr 1fr; gap:5px; max-height:200px; overflow-y:auto; margin-bottom:10px;'>";
@@ -480,14 +472,10 @@ const ui = {
                 Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)),
                 Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
             ];
-            // 1. Get HQ Level
             const hqLvl = v.buildings["Headquarters"] || 1;
-
-            // 2. Calculate Speed Modifier (5% faster per HQ level)
             const speedMod = Math.pow(0.95, hqLvl);
-
-            // 3. Calculate Final Time
             const tSeconds = Math.floor(d.time * Math.pow(1.2, virtualLvl) * speedMod);
+
             let queueStatus = "";
             if (queuedCount > 0) {
                 queueStatus = `<div style="color:blue; font-size:11px; margin-bottom:5px;">${T('check_queue').replace('%s', queuedCount)}</div>`;
@@ -526,7 +514,7 @@ const ui = {
             return;
         }
 
-        // --- 2. STANDARD BUILDING HANDLING ---
+        // --- STANDARD BUILDING HANDLING ---
         const queuedCount = v.queues.build.filter(q => q.building === bName).length;
         const virtualLvl = v.buildings[bName] + queuedCount;
         const c = [
@@ -534,10 +522,13 @@ const ui = {
             Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)),
             Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
         ];
-        const tSeconds = Math.floor(d.time * Math.pow(1.2, virtualLvl));
+        // FIX: HQ Speed Bonus applied to display
+        const hqLvl = v.buildings["Headquarters"] || 1;
+        const speedMod = Math.pow(0.95, hqLvl);
+        const tSeconds = Math.floor(d.time * Math.pow(1.2, virtualLvl) * speedMod);
 
         document.getElementById('b-modal-title').innerText = `${T_Name(bName)} (Lv ${virtualLvl})`;
-        document.getElementById('b-modal-desc').innerText = d.desc; // Descriptions could be moved to STRINGS/DB later
+        document.getElementById('b-modal-desc').innerText = d.desc;
 
         let queueStatus = "";
         if (queuedCount > 0) {
@@ -578,7 +569,6 @@ const ui = {
                     d.classList.add(t.type);
                     const pts = t.points ? `\n<span style='font-size:7px'>${t.points}</span>` : "";
                     const icon = t.type === "player" ? "🏰" : (t.type === "enemy" ? "🏯" : "🛖");
-                    // Translating Map Names if possible, else fallback
                     let displayName = T_Name(t.name);
                     if (!STRINGS[LANG][t.name]) displayName = t.name;
 

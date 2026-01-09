@@ -34,3 +34,15 @@ function getTechMultiplier(level) {
     if (level === 3) return 1.40;
     return 1.0;
 }
+
+function roundNumbers(obj) {
+    for (let key in obj) {
+        if (typeof obj[key] === 'number') {
+            // Round to 2 decimal places
+            obj[key] = Math.round(obj[key] * 100) / 100; 
+        } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+            roundNumbers(obj[key]); // Recurse
+        }
+    }
+    return obj;
+}
