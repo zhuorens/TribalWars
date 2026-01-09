@@ -298,12 +298,25 @@ const ui = {
     },
 
     openAttackModal: function (t) {
-        ui.selTile = t;
+        // 1. Resolve the full Target Village object
+        // The map click might pass a simplified object, so we find the real one by ID.
+        let target = t;
+        if (t.id) {
+            const found = state.villages.find(v => v.id === t.id);
+            if (found) target = found;
+        }
+
+        // If target still doesn't have x/y (e.g. empty tile), try to retrieve from ui.selTile or context
+        // But for villages, 'target' is now the full village object with .x and .y
+        
+        ui.selTile = target;
         const v = engine.getCurrentVillage();
+        
+        // Check ownership (Handle both 'owner' from village obj and 'type' from map obj)
+        const owner = target.owner || target.type; 
+        const isMyVillage = owner === 'player' && state.villages.some(vil => vil.id === target.id);
 
-        // Check if the target is one of MY villages
-        const isMyVillage = t.type === 'player' && state.villages.some(vil => vil.id === t.id && vil.owner === 'player');
-
+        // Generate Unit Inputs
         let html = "";
         for (let u in v.units) {
             if (v.units[u] > 0) {
@@ -317,33 +330,40 @@ const ui = {
             }
         }
 
-        document.getElementById('a-modal-title').innerText = isMyVillage ? `${t.name} (My Village)` : `Target: ${t.name}`;
+        // 2. Safe Title Generation (Checks for undefined coordinates)
+        const coords = (target.x !== undefined && target.y !== undefined) 
+            ? `(${target.x}|${target.y})` 
+            : ""; // Fallback if still missing
+            
+        const titleText = isMyVillage 
+            ? `${target.name} ${coords} - My Village` 
+            : `Target: ${target.name} ${coords}`;
+
+        document.getElementById('a-modal-title').innerText = titleText;
         document.getElementById('a-modal-units').innerHTML = html || T('noTroops');
 
+        // Footer Actions
         const footer = document.querySelector('#attack-modal .modal-actions');
-
-        // CHECK MARKET
+        
         const marketLvl = v.buildings["Market"] || 0;
-        // Create the Resource Button HTML if Market exists
-        // It calls openMarketModal with the target ID
-        const resBtn = marketLvl > 0
-            ? `<button class="btn btn-blue" onclick="ui.closeAttackModal(); ui.openMarketModal(${t.id})">💰 Send Res</button>`
+        const resBtn = marketLvl > 0 
+            ? `<button class="btn btn-blue" onclick="ui.closeAttackModal(); ui.openMarketModal(${target.id})">💰 Send Res</button>` 
             : '';
 
         if (isMyVillage) {
             footer.innerHTML = `
-        <button class="btn btn-red" onclick="ui.closeAttackModal()">${T('cancel')}</button>
-        <button class="btn" onclick="ui.switchVillage(${t.id}); ui.closeAttackModal(); ui.showTab('hq', document.querySelector('.tab-btn'));">Enter Village</button>
-        <button class="btn btn-blue" onclick="game.launchAttack('support')">🛡️ Support</button>
-        ${resBtn}
-    `;
+                <button class="btn btn-red" onclick="ui.closeAttackModal()">${T('cancel')}</button>
+                <button class="btn" onclick="ui.switchVillage(${target.id}); ui.closeAttackModal(); ui.showTab('hq', document.querySelector('.tab-btn'));">Enter Village</button>
+                <button class="btn btn-blue" onclick="game.launchAttack('support')">🛡️ Support</button>
+                ${resBtn}
+            `;
         } else {
             footer.innerHTML = `
-        <button class="btn btn-red" onclick="ui.closeAttackModal()">${T('cancel')}</button>
-        <button class="btn" onclick="game.launchAttack('attack')">⚔️ ${T('attack')}</button>
-        <button class="btn btn-blue" onclick="game.launchAttack('support')">🛡️ Support</button>
-        ${resBtn}
-    `;
+                <button class="btn btn-red" onclick="ui.closeAttackModal()">${T('cancel')}</button>
+                <button class="btn" onclick="game.launchAttack('attack')">⚔️ ${T('attack')}</button>
+                <button class="btn btn-blue" onclick="game.launchAttack('support')">🛡️ Support</button>
+                ${resBtn}
+            `;
         }
 
         document.getElementById('attack-modal').style.display = 'flex';
@@ -471,14 +491,14 @@ const ui = {
             html += "</div>";
 
             // B. UPGRADE BUILDING SECTION (FIXED: Uses Virtual Level)
-            
+
             // Calculate Virtual Level
             const queuedCount = v.queues.build.filter(q => q.building === bName).length;
             const virtualLvl = v.buildings[bName] + queuedCount;
 
             const c = [
-                Math.floor(d.base[0] * Math.pow(d.factor, virtualLvl)), 
-                Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)), 
+                Math.floor(d.base[0] * Math.pow(d.factor, virtualLvl)),
+                Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)),
                 Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
             ];
             const tSeconds = Math.floor(d.time * Math.pow(1.2, virtualLvl));
@@ -491,7 +511,7 @@ const ui = {
 
             html += `<hr><h4>${T('upgrade')} ${T_Name(bName)} (Lv ${virtualLvl} ➔ ${virtualLvl + 1})</h4>`;
             html += `${queueStatus}`;
-            
+
             const btnText = `${T('upgrade')} ${T_Name(bName)}`;
 
             html += `<div style="display:flex; justify-content:space-between; align-items:center;">
@@ -506,16 +526,16 @@ const ui = {
             setTimeout(() => {
                 const btn = document.getElementById('smithy-upgrade-btn');
                 if (btn) {
-                    btn.onclick = () => { 
-                        game.build(bName); 
+                    btn.onclick = () => {
+                        game.build(bName);
                         ui.openBuildingModal(bName); // Re-open to update costs
                     };
-                    
+
                     // FIX: Check Queue Limit, not just if queue > 0
                     const isQueueFull = v.queues.build.length >= CONFIG.buildQueueLimit;
                     const canAfford = v.res[0] >= c[0] && v.res[1] >= c[1] && v.res[2] >= c[2];
-                    
-                    if(isQueueFull) {
+
+                    if (isQueueFull) {
                         btn.innerText = "Queue Full";
                         btn.disabled = true;
                     } else if (!canAfford) {
@@ -529,7 +549,7 @@ const ui = {
         }
 
         // --- 2. STANDARD BUILDING HANDLING (Your existing correct code) ---
-        
+
         // 1. Calculate Virtual Level (Current + Queued)
         const queuedCount = v.queues.build.filter(q => q.building === bName).length;
         const virtualLvl = v.buildings[bName] + queuedCount;
@@ -610,11 +630,39 @@ const ui = {
         ui.renderMinimap();
     },
     renderMinimap: function () {
-        const cvs = document.getElementById('minimap'); if (!cvs) return; const ctx = cvs.getContext('2d');
-        const w = cvs.width, h = cvs.height; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, w, h);
+        const cvs = document.getElementById('minimap');
+        if (!cvs) return;
+        const ctx = cvs.getContext('2d');
+        const w = cvs.width, h = cvs.height;
+
+        // 1. Clear Background
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, w, h);
+
+        // 2. Calculate Scale (Canvas Pixels per Game Tile)
         const scale = w / CONFIG.mapSize;
-        state.villages.forEach(v => { const mx = v.x * scale; const my = v.y * scale; ctx.fillStyle = v.owner === 'player' ? '#FFFF00' : (v.owner === 'enemy' ? '#FF0000' : '#888888'); ctx.fillRect(mx, my, 2, 2); });
-        const vx = state.mapView.x * scale; const vy = state.mapView.y * scale; ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 1; ctx.strokeRect(vx - 3, vy - 3, 6, 6);
+
+        // 3. Draw Villages
+        state.villages.forEach(v => {
+            const mx = v.x * scale;
+            const my = v.y * scale;
+            ctx.fillStyle = v.owner === 'player' ? '#FFFF00' : (v.owner === 'enemy' ? '#FF0000' : '#888888');
+            ctx.fillRect(mx, my, 2, 2);
+        });
+
+        // 4. Draw Viewport Rectangle (Corrected for 15x15 View)
+        const viewTiles = 15; // The size of your map grid (7 radius + 1 center + 7 radius = 15)
+        const rectSize = viewTiles * scale;
+
+        const vx = state.mapView.x * scale;
+        const vy = state.mapView.y * scale;
+
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 1;
+
+        // Center the rectangle on the current view coordinates
+        // x - half_width, y - half_height
+        ctx.strokeRect(vx - (rectSize / 2), vy - (rectSize / 2), rectSize, rectSize);
     },
     updateMissions: function () {
         const el = document.getElementById('active-missions');
