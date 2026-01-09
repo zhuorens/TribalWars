@@ -22,26 +22,26 @@ const game = {
 
         v.res[0] += cost[0]; v.res[1] += cost[1]; v.res[2] += cost[2];
         q.splice(idx, 1);
-        ui.refresh(); engine.save();
+        ui.refresh(); 
+        
+        // CHANGED: Use soft save
+        requestAutoSave();
     },
 
     build: function (b) {
         const v = engine.getCurrentVillage();
         const d = DB.buildings[b];
         
-        // 1. Calculate Virtual Level
         const queuedCount = v.queues.build.filter(q => q.building === b).length;
         const virtualLvl = v.buildings[b] + queuedCount;
 
         if (virtualLvl >= d.maxLevel) { alert(T('maxLevel')); return; }
         
-        // 2. Queue Limit Check
         if (v.queues.build.length >= CONFIG.buildQueueLimit) {
             alert(T('queue_full'));
             return;
         }
 
-        // 3. Cost Calculation
         const c = [
             Math.floor(d.base[0] * Math.pow(d.factor, virtualLvl)), 
             Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)), 
@@ -49,15 +49,12 @@ const game = {
         ];
 
         if (v.res[0] >= c[0] && v.res[1] >= c[1] && v.res[2] >= c[2]) {
-            // Deduct Resources
             v.res[0] -= c[0]; v.res[1] -= c[1]; v.res[2] -= c[2];
             
-            // --- NEW: Calculate Duration with HQ Bonus ---
             const hqLvl = v.buildings["Headquarters"] || 1;
             const speedMod = Math.pow(0.95, hqLvl); 
             const duration = Math.floor(d.time * Math.pow(1.2, virtualLvl) * speedMod) * 1000;
             
-            // Calculate Start/Finish Time
             const lastFinish = v.queues.build.length > 0 
                 ? v.queues.build[v.queues.build.length - 1].finish 
                 : Date.now();
@@ -69,7 +66,8 @@ const game = {
             });
             
             ui.refresh(); 
-            engine.save();
+            // CHANGED: Use soft save
+            requestAutoSave();
         } else {
             alert(T('resLimit'));
         }
@@ -100,7 +98,9 @@ const game = {
             const duration = d.time * amt * 1000;
             const lastFinish = q.length > 0 ? q[q.length - 1].finish : Date.now();
             q.push({ unit: u, count: amt, duration: duration, finish: lastFinish + duration });
-            ui.refresh(); engine.save();
+            ui.refresh(); 
+            // CHANGED: Use soft save
+            requestAutoSave();
         } else { alert(T('resLimit')); }
     },
     research: function (u) {
@@ -117,7 +117,9 @@ const game = {
         const duration = Math.floor(baseTime * reduction * 1000);
         const lastFinish = q.length > 0 ? q[q.length - 1].finish : Date.now();
         q.push({ unit: u, level: curLvl + 1, duration: duration, finish: lastFinish + duration });
-        ui.closeBuildingModal(); ui.refresh(); engine.save();
+        ui.closeBuildingModal(); ui.refresh(); 
+        // CHANGED: Use soft save
+        requestAutoSave();
     },
     moveMap: function (dx, dy) { state.mapView.x += dx; state.mapView.y += dy; ui.renderMap(); },
     launchAttack: function (type = 'attack') {
@@ -129,7 +131,9 @@ const game = {
         const dist = Math.sqrt(Math.pow(targetV.x - v.x, 2) + Math.pow(targetV.y - v.y, 2));
         const dur = dist * (state.debugFastTravel ? 2 : 60);
         state.missions.push({ originId: v.id, targetId: t.id, units: units, type: type, arrival: Date.now() + (dur * 1000) });
-        ui.closeAttackModal(); ui.refresh(); engine.save();
+        ui.closeAttackModal(); ui.refresh(); 
+        // CHANGED: Use soft save
+        requestAutoSave();
     },
     sendBackSupport: function (idx) {
         const v = engine.getCurrentVillage();
@@ -139,7 +143,9 @@ const game = {
         const dur = dist * (state.debugFastTravel ? 2 : 60);
         v.stationed.splice(idx, 1);
         state.missions.push({ originId: stack.originId, targetId: stack.originId, units: stack.units, type: 'return', arrival: Date.now() + (dur * 1000) });
-        ui.refresh(); ui.closeReportModal(); engine.save();
+        ui.refresh(); ui.closeReportModal(); 
+        // CHANGED: Use soft save
+        requestAutoSave();
     },
     withdrawSupport: function (targetId) {
         const v = engine.getCurrentVillage();
@@ -152,12 +158,12 @@ const game = {
         const dist = Math.sqrt(Math.pow(target.x - v.x, 2) + Math.pow(target.y - v.y, 2));
         const dur = dist * (state.debugFastTravel ? 2 : 60);
         state.missions.push({ originId: v.id, targetId: v.id, units: stack.units, type: 'return', arrival: Date.now() + (dur * 1000) });
-        ui.refresh(); ui.closeReportModal(); engine.save();
+        ui.refresh(); ui.closeReportModal(); 
+        // CHANGED: Use soft save
+        requestAutoSave();
     },
     sendResources: function() {
         const v = engine.getCurrentVillage();
-        
-        // CHANGED: Read from hidden input
         const targetId = parseFloat(document.getElementById('market-target-id').value);
         
         const wood = parseInt(document.getElementById('market-wood').value) || 0;
@@ -166,15 +172,12 @@ const game = {
 
         if (wood === 0 && clay === 0 && iron === 0) return;
 
-        // 1. Validation: Enough Resources?
         if (v.res[0] < wood || v.res[1] < clay || v.res[2] < iron) {
             alert(T('resLimit'));
             return;
         }
 
-        // 2. Validation: Market Capacity?
         const marketLvl = v.buildings["Market"] || 0;
-        // Security check if user somehow opened modal without market
         if (marketLvl === 0) { alert("Build a Market first!"); return; }
         
         const maxCap = marketLvl * CONFIG.marketCapacityPerLevel;
@@ -185,11 +188,9 @@ const game = {
             return;
         }
 
-        // 3. Find Target
         const targetV = state.villages.find(vil => vil.id === targetId);
         if (!targetV) { alert(T('targetVanished')); return; }
 
-        // 4. Deduct & Launch
         v.res[0] -= wood; v.res[1] -= clay; v.res[2] -= iron;
 
         const dist = Math.sqrt(Math.pow(targetV.x - v.x, 2) + Math.pow(targetV.y - v.y, 2));
@@ -205,8 +206,8 @@ const game = {
 
         ui.closeBuildingModal(); 
         ui.refresh();
-        engine.save();
-        // Optional: toast notification
+        // CHANGED: Use soft save
+        requestAutoSave();
         console.log("Merchants sent to " + targetV.name);
     },
 };

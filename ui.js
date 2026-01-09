@@ -404,7 +404,7 @@ const ui = {
     renameVillage: function () {
         const v = engine.getCurrentVillage();
         const newName = prompt(T('rename'), v.name);
-        if (newName) { v.name = newName; state.mapData[`${v.x},${v.y}`].name = newName; ui.refresh(); engine.save(); }
+        if (newName) { v.name = newName; state.mapData[`${v.x},${v.y}`].name = newName; ui.refresh(); requestAutoSave(); }
     },
 
     renderVillage: function () {

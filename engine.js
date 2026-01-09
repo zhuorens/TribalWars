@@ -1,3 +1,33 @@
+// --- HELPERS (Global) ---
+
+// 1. Round numbers to save space (e.g. 10.33333 -> 10.33)
+function recursiveRound(obj) {
+    let newObj = Array.isArray(obj) ? [] : {};
+    for (let key in obj) {
+        let value = obj[key];
+        if (typeof value === 'number') {
+            newObj[key] = Math.round(value * 100) / 100;
+        } else if (typeof value === 'object' && value !== null) {
+            newObj[key] = recursiveRound(value);
+        } else {
+            newObj[key] = value;
+        }
+    }
+    return newObj;
+}
+
+// 2. Smart Save Trigger (Prevents lag when clicking fast)
+let saveTimeout = null;
+function requestAutoSave() {
+    // If a save is already queued, cancel it and restart the timer
+    if (saveTimeout) clearTimeout(saveTimeout);
+    
+    // Wait 2 seconds of inactivity before triggering the heavy save
+    saveTimeout = setTimeout(() => {
+        engine.save();
+    }, 5000);
+}
+
 // --- ENGINE (Logic) ---
 const engine = {
     init: function () {
@@ -5,28 +35,31 @@ const engine = {
             try {
                 // Load Save
                 var raw = localStorage.getItem('tw_v5_save');
-                state = { ...state, ...JSON.parse(LZString.decompressFromUTF16(raw)) };
+                
+                // Try to decompress. If it fails (old save), use raw string.
+                var decompressed = LZString.decompressFromUTF16(raw);
+                var parsedData = JSON.parse(decompressed || raw);
+                
+                state = { ...state, ...parsedData };
+                
                 if (!state.selectedVillageId && state.villages.length > 0) {
                     state.selectedVillageId = state.villages[0].id;
                 }
-                
+
                 // MIGRATION: Fix old saves
                 state.villages.forEach(v => {
                     if (!v.queues) v.queues = { build: [], research: [], barracks: [], stable: [], workshop: [], academy: [] };
-                    if (!v.stationed) v.stationed = []; 
-                    if (v.buildings["Market"] === undefined) v.buildings["Market"] = 0; 
+                    if (!v.stationed) v.stationed = [];
+                    if (v.buildings["Market"] === undefined) v.buildings["Market"] = 0;
                 });
-                
-            } catch (e) { console.error(e); }
+
+            } catch (e) { console.error("Save Load Error:", e); }
         } else {
             // --- NEW GAME SETUP ---
-            // 1. Create Player Village at Center
             const v = engine.createVillage(100, 100, "My Village", "player");
             state.villages.push(v);
             state.selectedVillageId = v.id;
-            
-            // 2. Generate the ENTIRE Map (0 to 200)
-            // We step by 15 because generateMapChunk covers a 15x15 area (radius 7)
+
             console.log("Generating Map...");
             for (let x = 0; x <= CONFIG.mapSize; x += 15) {
                 for (let y = 0; y <= CONFIG.mapSize; y += 15) {
@@ -35,83 +68,99 @@ const engine = {
             }
             console.log("Map Generation Complete. Villages: " + state.villages.length);
         }
-        
+
         ui.init();
-        
+
         // Start Loops
         if (window.gameLoop) clearInterval(window.gameLoop);
         if (window.saveLoop) clearInterval(window.saveLoop);
-        
+
         window.gameLoop = setInterval(engine.tick, 1000);
-        window.saveLoop = setInterval(engine.save, 5000);
+        
+        // Backup Interval: Save every 60 seconds regardless of activity
+        window.saveLoop = setInterval(engine.save, 60000);
+
+        // Save on Tab Close
+        window.onbeforeunload = function() {
+            engine.save();
+        };
     },
 
     getCurrentVillage: function () {
         return state.villages.find(v => v.id === state.selectedVillageId) || state.villages[0];
     },
 
-    generateEnemyName: function() {
+    generateEnemyName: function () {
         const adjs = ["Dark", "Red", "Iron", "Black", "Grim", "Savage", "Cruel", "Blood", "Storm", "Chaos", "Vile", "Shadow"];
         const nouns = ["Keep", "Fort", "Tower", "Hold", "Bastion", "Citadel", "Outpost", "Lair", "Den", "Gate", "Dominion", "Empire"];
-        
         const rand = (arr) => arr[Math.floor(Math.random() * arr.length)];
-        // Optional: Append a random number 10% of the time for extra variety
         const suffix = Math.random() > 0.9 ? ` ${Math.floor(Math.random() * 99)}` : "";
-        
         return `${rand(adjs)} ${rand(nouns)}${suffix}`;
     },
 
-    rand: function(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; },
+    rand: function (min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; },
 
     createVillage: function (x, y, name, owner) {
         let builds = {};
-        
-        // Default Setup (Player/Barbarian Base)
+        // Default "Player Start" values
         for (let b in DB.buildings) {
-            if (b === "Headquarters") {
-                builds[b] = 1;
-            } else if (b === "Farm" || b === "Warehouse") {
-                builds[b] = 3; 
-            } else if (b.includes("Camp") || b.includes("Pit") || b.includes("Mine")) {
-                builds[b] = 5; 
-            } else {
-                builds[b] = 0; 
-            }
+            if (b === "Headquarters") builds[b] = 1;
+            else if (b === "Farm" || b === "Warehouse") builds[b] = 3;
+            else if (b.includes("Camp") || b.includes("Pit") || b.includes("Mine")) builds[b] = 5;
+            else builds[b] = 0;
         }
-
+    
         let units = {}; for (let u in DB.units) units[u] = 0;
         let techs = {}; for (let u in DB.units) techs[u] = 1;
-
-        // --- ENEMY RANDOMIZATION ---
+    
+        // Helper for random numbers
+        const r = engine.rand;
+    
         if (owner === "enemy") {
-            // Randomize Buildings (e.g., Wall 3-7 instead of fixed 5)
-            const r = engine.rand; 
-            builds["Wall"] = r(1, 3); 
-            builds["Barracks"] = r(1, 5); 
-            builds["Headquarters"] = r(2, 10); 
-            builds["Farm"] = r(2, 10); 
+            // --- ENEMY LOGIC (Stronger) ---
+            builds["Wall"] = r(1, 3);
+            builds["Barracks"] = r(1, 5);
+            builds["Headquarters"] = r(2, 10);
+            builds["Farm"] = r(2, 10);
             builds["Warehouse"] = r(5, 10);
-            builds["Timber Camp"] = r(10, 15); 
-            builds["Clay Pit"] = r(10, 15); 
+            builds["Timber Camp"] = r(10, 15);
+            builds["Clay Pit"] = r(10, 15);
             builds["Iron Mine"] = r(10, 15);
-            builds["Smithy"] = r(0, 4);
+            builds["Smithy"] = r(0, 2);
             builds["Market"] = r(0, 4);
-
-            // Randomize Units
-            units["Spear"] = r(200, 500); 
-            units["Sword"] = r(200, 500); 
-            units["Heavy Cav"] = r(20, 80); 
+    
+            units["Spear"] = r(200, 500);
+            units["Sword"] = r(200, 500);
+            units["Heavy Cav"] = r(20, 80);
             units["Scout"] = r(20, 100);
-            if(Math.random() > 0.7) units["Ram"] = r(10, 30);
+            if (Math.random() > 0.7) units["Ram"] = r(10, 30);
+    
+        } else if (owner === "barb") {
+            // --- BARB LOGIC (Random, but Weaker than Enemy) ---
+            // Resources: 4-10 (Enemy is 10-15)
+            builds["Timber Camp"] = r(6, 15);
+            builds["Clay Pit"] = r(6, 15);
+            builds["Iron Mine"] = r(6, 15);
+            
+            // Infrastructure: Lower tier
+            builds["Headquarters"] = r(1, 5);
+            builds["Farm"] = r(1, 5);
+            builds["Warehouse"] = r(5, 10);
+            
+            // Military: Barbs rarely have high tech buildings
+            builds["Barracks"] = r(0, 2); 
+            builds["Market"] = r(0, 2);
+            
         }
-
+    
         const v = {
             id: Date.now() + Math.random(), x: x, y: y, name: name, owner: owner,
-            res: [100, 100, 100], buildings: builds, units: units, techs: techs,
+            res: [500, 500, 500], buildings: builds, units: units, techs: techs,
             queues: { build: [], research: [], barracks: [], stable: [], workshop: [], academy: [] },
             stationed: [],
             loyalty: 100, points: 0
         };
+        
         v.points = engine.calculatePoints(v);
         state.mapData[`${x},${y}`] = { type: owner, id: v.id, name: name, points: v.points };
         return v;
@@ -128,54 +177,40 @@ const engine = {
     generateMapChunk: function (cX, cY) {
         for (let x = cX - 7; x <= cX + 7; x++) {
             for (let y = cY - 7; y <= cY + 7; y++) {
-                // 1. Check Bounds
                 if (x < 0 || x > CONFIG.mapSize || y < 0 || y > CONFIG.mapSize) continue;
-
-                // 2. Check Existing
                 if (state.mapData[`${x},${y}`]) continue;
-                
-                // 3. Protect Player Start (100, 100)
                 if (x === 100 && y === 100) continue;
 
                 const r = Math.random();
-                
                 if (r > 0.95) {
-                    // CHANGED: Generate unique name
-                    const name = engine.generateEnemyName(); 
+                    const name = engine.generateEnemyName();
                     state.villages.push(engine.createVillage(x, y, name, "enemy"));
-                } 
-                else if (r > 0.85) {
+                } else if (r > 0.85) {
                     state.villages.push(engine.createVillage(x, y, "Barbarian", "barb"));
-                } 
-                else {
+                } else {
                     state.mapData[`${x},${y}`] = { type: "empty" };
                 }
             }
         }
     },
 
-    updatePoints: function() {
-        // 1. Recalculate Individual Village Points
+    updatePoints: function () {
         state.villages.forEach(v => {
             v.points = engine.calculatePoints(v);
-            // Sync with Map Data
             if (state.mapData[`${v.x},${v.y}`]) {
                 state.mapData[`${v.x},${v.y}`].points = v.points;
             }
         });
-    
-        // 2. Recalculate Global Player Points
+
         let globalPoints = 0;
         state.villages.forEach(v => {
             if (v.owner === 'player') globalPoints += v.points;
         });
         state.playerPoints = globalPoints;
-    
-        // 3. Update DOM Elements Immediately
+
         const gpEl = document.getElementById('global-points');
         if (gpEl) gpEl.innerText = globalPoints;
-        
-        // Also update the specific village point display if it exists
+
         const vpEl = document.getElementById('village-points');
         if (vpEl) {
             const current = engine.getCurrentVillage();
@@ -186,92 +221,76 @@ const engine = {
     tick: function () {
         const dt = (Date.now() - state.lastTick) / 1000;
         state.lastTick = Date.now();
-    
-        // 1. PRODUCTION & QUEUES (Runs for Player AND Enemies)
+
         state.villages.forEach(v => {
-            // Production (Enemies generate resources here too!)
             const cap = engine.getStorage(v);
             const wood = (60 * Math.pow(1.16, v.buildings["Timber Camp"])) / 3600 * dt;
             const clay = (60 * Math.pow(1.16, v.buildings["Clay Pit"])) / 3600 * dt;
             const iron = (60 * Math.pow(1.16, v.buildings["Iron Mine"])) / 3600 * dt;
-    
+
             v.res[0] = Math.min(cap, v.res[0] + wood);
             v.res[1] = Math.min(cap, v.res[1] + clay);
             v.res[2] = Math.min(cap, v.res[2] + iron);
-    
+
             if (v.loyalty < 100) v.loyalty = Math.min(100, v.loyalty + (dt / 3600));
-    
-            // Queue Processing
+
             const processQ = (type, action) => {
                 const q = v.queues[type];
                 if (q.length > 0) {
                     const item = q[0];
                     if (!item.finish) item.finish = Date.now() + item.duration;
-                    
+
                     if (Date.now() >= item.finish) {
                         action(q.shift());
-                        // Update points immediately when a building finishes
-                        if(type === 'build') {
+                        if (type === 'build') {
                             v.points = engine.calculatePoints(v);
-                            // Update map data cache if it exists
                             if (state.mapData[`${v.x},${v.y}`]) state.mapData[`${v.x},${v.y}`].points = v.points;
                         }
-                        
-                        // Start next item immediately if exists
                         if (q.length > 0) {
                             q[0].finish = Date.now() + q[0].duration;
                         }
-                        
                         ui.refresh();
+                        // Auto-save on completion
+                        requestAutoSave();
                     }
                 }
             };
-    
+
             processQ('build', (item) => v.buildings[item.building]++);
             processQ('research', (item) => { if (!v.techs) v.techs = {}; v.techs[item.unit] = (v.techs[item.unit] || 1) + 1; });
             ['barracks', 'stable', 'workshop', 'academy'].forEach(q => {
-                 processQ(q, (item) => v.units[item.unit] += item.count);
+                processQ(q, (item) => v.units[item.unit] += item.count);
             });
         });
-    
-        // 2. AI VILLAGE GROWTH (New Logic)
+
+        // AI Growth & Attacks
         const now = Date.now();
         if (!state.nextAiGrowth) state.nextAiGrowth = now + CONFIG.aiGrowthInterval;
-        
+
         if (now > state.nextAiGrowth) {
             state.nextAiGrowth = now + CONFIG.aiGrowthInterval;
-            
             state.villages.forEach(v => {
                 if (v.owner === 'enemy' || v.owner === 'barb') {
-                    // Try to upgrade a random building
                     if (Math.random() < CONFIG.aiGrowthChance) {
                         const bKeys = Object.keys(v.buildings);
                         const randBuild = bKeys[Math.floor(Math.random() * bKeys.length)];
-                        
-                        // Hard cap at level 30 to prevent bugs
                         if (v.buildings[randBuild] < 30) {
                             v.buildings[randBuild]++;
-                            // Update points so the map reflects the growth
                             v.points = engine.calculatePoints(v);
                             if (state.mapData[`${v.x},${v.y}`]) state.mapData[`${v.x},${v.y}`].points = v.points;
                         }
                     }
-                    
-                    // Slow troop recruitment for enemies
                     if (v.owner === 'enemy' && Math.random() < 0.3) {
-                         v.units["Spear"] = (v.units["Spear"] || 0) + 10;
-                         v.units["Sword"] = (v.units["Sword"] || 0) + 10;
+                        v.units["Spear"] = (v.units["Spear"] || 0) + 10;
+                        v.units["Sword"] = (v.units["Sword"] || 0) + 10;
                     }
                 }
             });
-            // Refresh map if open to show new points
             if (document.getElementById('map').classList.contains('active')) ui.renderMap();
         }
 
-        // 3. AI ATTACK SPAWNER
         if (CONFIG.aiAttackEnabled) {
             if (!state.nextAiCheck) state.nextAiCheck = now + CONFIG.aiAttackInterval;
-
             if (now > state.nextAiCheck) {
                 state.nextAiCheck = now + CONFIG.aiAttackInterval;
                 if (Math.random() < CONFIG.aiAttackChance) {
@@ -280,7 +299,7 @@ const engine = {
             }
         }
 
-        // 4. MISSIONS
+        // Missions
         state.missions = state.missions.filter(m => {
             if (Date.now() >= m.arrival) { engine.resolveMission(m); return false; }
             return true;
@@ -630,55 +649,75 @@ const engine = {
         if (state.reports.length > CONFIG.maxReports) state.reports = state.reports.slice(0, CONFIG.maxReports);
         
         ui.renderReports();
-        engine.save();
+        requestAutoSave(); 
     },
 
-    save: function () { 
-        var compressed = LZString.compressToUTF16(JSON.stringify(roundNumbers(state)));
-        localStorage.setItem('tw_v5_save', compressed); },
-        
-    exportSave: function() {
+    // --- SAVE FUNCTION (Hard Save) ---
+    save: function () {
+        try {
+            // 1. Round numbers (Clean)
+            const cleanState = recursiveRound(state);
+            // 2. Compress (Shrink)
+            const compressed = LZString.compressToUTF16(JSON.stringify(cleanState));
+            // 3. Write
+            localStorage.setItem('tw_v5_save', compressed);
+            console.log("Game Saved.");
+        } catch (e) {
+            if (e.name === 'QuotaExceededError') {
+                console.error("Save Failed: Storage Full");
+            } else {
+                console.error("Save Error:", e);
+            }
+        }
+    },
+
+    exportSave: function () {
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", "tribalwars_save_" + Date.now() + ".json");
-        document.body.appendChild(downloadAnchorNode); // Required for firefox
-        downloadAnchorNode.click();
-        downloadAnchorNode.remove();
+        const dlAnchor = document.createElement('a');
+        dlAnchor.setAttribute("href", dataStr);
+        dlAnchor.setAttribute("download", "tribalwars_save_" + Date.now() + ".json");
+        document.body.appendChild(dlAnchor);
+        dlAnchor.click();
+        dlAnchor.remove();
     },
 
-    importSave: function(input) {
+    importSave: function (input) {
         const file = input.files[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = function(e) {
+        reader.onload = function (e) {
             try {
-                const contents = e.target.result;
-                const newState = JSON.parse(contents);
-                
-                // Simple validation
-                if (!newState.villages) throw new Error("Invalid Save File");
-                
+                const newState = JSON.parse(e.target.result);
+                if (!newState.villages) throw new Error("Invalid Save");
                 state = newState;
-                engine.save(); // Save to local storage immediately
-                alert("Save loaded successfully!");
-                location.reload(); // Reload to refresh state
-            } catch (err) {
-                console.error(err);
-                alert("Error loading save file: " + err.message);
-            }
+                engine.save();
+                alert("Loaded!");
+                location.reload();
+            } catch (err) { alert("Error: " + err.message); }
         };
         reader.readAsText(file);
     },
 
-    resetGame: function() {
-        if(confirm("Are you sure? This will delete your current progress.")) {
+    resetGame: function () {
+        if (confirm("Delete progress?")) {
+            // 1. Kill the "Save on Exit" trigger (The most likely culprit)
+            window.onbeforeunload = null; 
+    
+            // 2. Neutralize the save function itself 
+            // (Prevents auto-save loops from writing data in the milliseconds before reload)
+            // Assuming your save function is on this object or global:
+            this.saveGame = function() { console.log("Save blocked by reset."); }; 
+    
+            // 3. Wipe the data
             localStorage.removeItem("tw_v5_save");
+    
+            // 4. Reload
             location.reload();
         }
     },
     getStorage: function (v) { return Math.round(1000 * Math.pow(1.23, v.buildings["Warehouse"] - 1)); },
-    spawnAiAttack: function() {
+    
+    spawnAiAttack: function () {
         // 1. Pick a target (Random player village)
         const playerVillages = state.villages.filter(v => v.owner === 'player');
         if (playerVillages.length === 0) return;
@@ -716,5 +755,6 @@ const engine = {
         // Optional: Alert the user immediately (Sound or Toast)
         console.log(`AI Attack launched from ${origin.name} to ${target.name}`);
         ui.updateMissions(); // Force immediate refresh
+        requestAutoSave();
     },
 };
