@@ -4,14 +4,12 @@ let LANG = 'zh'; // Default Language
 
 const STRINGS = {
     'en': {
-        // TABS
+        // ... (Keep your existing TABS, HEADERS, BUTTONS, UNIT NAMES, BUILDING NAMES) ...
         'tab_hq': '🏰 Village',
         'tab_recruit': '⚔️ Recruit',
         'tab_map': '🗺️ Map',
         'tab_reports': '📜 Reports',
         'tab_settings': '⚙️ Settings',
-
-        // HEADERS & LABELS
         'header_lang': 'Language',
         'header_debug': 'Debug Tools',
         'header_cheat': 'Building Cheat',
@@ -23,8 +21,8 @@ const STRINGS = {
         'btn_close': 'Close',
         'btn_cancel': 'Cancel',
         'btn_upgrade': 'Upgrade',
-
-        // GAME TERMS
+        
+        // ... (Keep existing GAME TERMS) ...
         'wood': 'Wood',
         'clay': 'Clay',
         'iron': 'Iron',
@@ -32,8 +30,6 @@ const STRINGS = {
         'storage': 'Storage',
         'points': 'Points',
         'village': 'Village',
-        
-        // DYNAMIC MESSAGES (Used in Logic)
         'upgrade': 'Upgrade',
         'cost': 'Cost',
         'recruit': 'Recruit',
@@ -55,124 +51,78 @@ const STRINGS = {
         'resLimit': 'Not enough resources!',
         'popLimit': 'Not enough population space!',
         'maxLevel': 'Building is at max level!',
+
+        // --- NEW KEYS FOR DYNAMIC UI ---
+        'production': 'Production',
+        'incoming_attack': 'INCOMING ATTACK!',
+        'next_in': 'Next in',
+        'view_map': 'View Map',
+        'manage_troops': 'Manage Stationed Troops',
+        'stationed_here': 'Stationed Here (From Others)',
+        'my_troops_elsewhere': 'My Troops Elsewhere',
+        'send_back': 'Send Back',
+        'withdraw': 'Withdraw',
+        'none': 'None',
+        'from': 'From',
+        'at': 'At',
+        'incoming': 'INCOMING',
+        'return': 'Return',
+        'transport': 'Transport',
+        'requires': 'Requires',
+        'queue_full': 'Queue Full',
+        'check_queue': 'Check: %s upgrades in queue.', // %s is a placeholder
+        'target': 'Target',
+        'capacity': 'Capacity',
+        'confirm_transport': 'Confirm Transport',
+        'managing_alert': 'You are currently managing this village.',
+        'rename': 'Name:',
         
-        // UNIT NAMES
-        'Spear': 'Spearman',
-        'Sword': 'Swordsman',
-        'Axe': 'Axeman',
-        'Archer': 'Archer',
-        'Scout': 'Scout',
-        'Light Cav': 'Light Cavalry',
-        'Heavy Cav': 'Heavy Cavalry',
-        'Ram': 'Ram',
-        'Catapult': 'Catapult',
-        'Noble': 'Nobleman',
-        
-        // BUILDING NAMES
-        'Headquarters': 'Headquarters',
-        'Barracks': 'Barracks',
-        'Stable': 'Stable',
-        'Workshop': 'Workshop',
-        'Academy': 'Academy',
-        'Smithy': 'Smithy',
-        'Rally Point': 'Rally Point',
-        'Market': 'Market',
-        'Timber Camp': 'Timber Camp',
-        'Clay Pit': 'Clay Pit',
-        'Iron Mine': 'Iron Mine',
-        'Farm': 'Farm',
-        'Warehouse': 'Warehouse',
-        'Wall': 'Wall',
-        'Hiding Place': 'Hiding Place'
+        // ... (Keep UNIT NAMES and BUILDING NAMES) ...
+        'Spear': 'Spearman', 'Sword': 'Swordsman', 'Axe': 'Axeman', 'Archer': 'Archer', 'Scout': 'Scout', 'Light Cav': 'Light Cavalry', 'Heavy Cav': 'Heavy Cavalry', 'Ram': 'Ram', 'Catapult': 'Catapult', 'Noble': 'Nobleman',
+        'Headquarters': 'Headquarters', 'Barracks': 'Barracks', 'Stable': 'Stable', 'Workshop': 'Workshop', 'Academy': 'Academy', 'Smithy': 'Smithy', 'Rally Point': 'Rally Point', 'Market': 'Market', 'Timber Camp': 'Timber Camp', 'Clay Pit': 'Clay Pit', 'Iron Mine': 'Iron Mine', 'Farm': 'Farm', 'Warehouse': 'Warehouse', 'Wall': 'Wall', 'Hiding Place': 'Hiding Place'
     },
     'zh': {
-        'tab_hq': '🏰 村庄',
-        'tab_recruit': '⚔️ 招募',
-        'tab_map': '🗺️ 地图',
-        'tab_reports': '📜 战报',
-        'tab_settings': '⚙️ 设置',
+        // ... (Keep existing translations) ...
+        'tab_hq': '🏰 村庄', 'tab_recruit': '⚔️ 招募', 'tab_map': '🗺️ 地图', 'tab_reports': '📜 战报', 'tab_settings': '⚙️ 设置',
+        'header_lang': '语言', 'header_debug': '调试工具', 'header_cheat': '建筑作弊', 'header_save': '存档管理',
+        'btn_return': '⌂ 返回当前村庄', 'btn_clear': '清除记录', 'btn_download': '💾 下载存档', 'btn_wipe': '⚠️ 清空存档', 'btn_close': '关闭', 'btn_cancel': '取消', 'btn_upgrade': '升级',
+        'wood': '木材', 'clay': '粘土', 'iron': '铁矿', 'pop': '人口', 'storage': '仓库', 'points': '分数', 'village': '村庄',
+        'upgrade': '升级', 'cost': '成本', 'recruit': '招募', 'max': '最大', 'troops': '军队', 'noTroops': '无可用部队',
+        'attack': '攻击', 'support': '支援', 'victory': '胜利', 'defeat': '失败', 'report': '战报', 'targetVanished': '目标消失',
+        'att': '进攻方', 'def': '防守方', 'loot': '掠夺', 'resources': '资源', 'conquered': '占领', 'loyalty': '忠诚度',
+        'resLimit': '资源不足！', 'popLimit': '人口空间不足！', 'maxLevel': '建筑已达最高级！',
 
-        'header_lang': '语言',
-        'header_debug': '调试工具',
-        'header_cheat': '建筑作弊',
-        'header_save': '存档管理',
-        'btn_return': '⌂ 返回当前村庄',
-        'btn_clear': '清除记录',
-        'btn_download': '💾 下载存档',
-        'btn_wipe': '⚠️ 清空存档',
-        'btn_close': '关闭',
-        'btn_cancel': '取消',
-        'btn_upgrade': '升级',
+        // --- NEW KEYS FOR DYNAMIC UI (CHINESE) ---
+        'production': '产量',
+        'incoming_attack': '敌军来袭！',
+        'next_in': '抵达倒计时',
+        'view_map': '查看地图',
+        'manage_troops': '管理驻军',
+        'stationed_here': '驻扎于此 (来自盟友/其他村庄)',
+        'my_troops_elsewhere': '我方外派军队',
+        'send_back': '遣返',
+        'withdraw': '召回',
+        'none': '无',
+        'from': '来自',
+        'at': '位于',
+        'incoming': '来袭',
+        'return': '返回',
+        'transport': '运输',
+        'requires': '需要',
+        'queue_full': '队列已满',
+        'check_queue': '提示: 队列中已有 %s 个升级任务。',
+        'target': '目标',
+        'capacity': '运载量',
+        'confirm_transport': '确认运输',
+        'managing_alert': '你正在管理该村庄。',
+        'rename': '名称:',
 
-        'wood': '木材',
-        'clay': '粘土',
-        'iron': '铁矿',
-        'pop': '人口',
-        'storage': '仓库',
-        'points': '分数',
-        'village': '村庄',
-
-        'upgrade': '升级',
-        'cost': '成本',
-        'recruit': '招募',
-        'max': '最大',
-        'troops': '军队',
-        'noTroops': '无可用部队',
-        'attack': '攻击',
-        'support': '支援',
-        'victory': '胜利',
-        'defeat': '失败',
-        'report': '战报',
-        'targetVanished': '目标消失',
-        'att': '进攻方',
-        'def': '防守方',
-        'loot': '掠夺',
-        'resources': '资源',
-        'conquered': '占领',
-        'loyalty': '忠诚度',
-        'resLimit': '资源不足！',
-        'popLimit': '人口空间不足！',
-        'maxLevel': '建筑已达最高级！',
-
-        'Spear': '长矛兵',
-        'Sword': '剑士',
-        'Axe': '斧头兵',
-        'Archer': '弓箭手',
-        'Scout': '侦察兵',
-        'Light Cav': '轻骑兵',
-        'Heavy Cav': '重骑兵',
-        'Ram': '冲车',
-        'Catapult': '投石车',
-        'Noble': '贵族',
-
-        'Headquarters': '大本营',
-        'Barracks': '兵营',
-        'Stable': '马厩',
-        'Workshop': '车间',
-        'Academy': '学院',
-        'Smithy': '铁匠铺',
-        'Rally Point': '集结点',
-        'Market': '市场',
-        'Timber Camp': '伐木场',
-        'Clay Pit': '粘土坑',
-        'Iron Mine': '铁矿',
-        'Farm': '农场',
-        'Warehouse': '仓库',
-        'Wall': '城墙',
-        'Hiding Place': '隐蔽处'
+        // ... (Keep UNIT NAMES and BUILDING NAMES) ...
+        'Spear': '长矛兵', 'Sword': '剑士', 'Axe': '斧头兵', 'Archer': '弓箭手', 'Scout': '侦察兵', 'Light Cav': '轻骑兵', 'Heavy Cav': '重骑兵', 'Ram': '冲车', 'Catapult': '投石车', 'Noble': '贵族',
+        'Headquarters': '大本营', 'Barracks': '兵营', 'Stable': '马厩', 'Workshop': '车间', 'Academy': '学院', 'Smithy': '铁匠铺', 'Rally Point': '集结点', 'Market': '市场', 'Timber Camp': '伐木场', 'Clay Pit': '粘土坑', 'Iron Mine': '铁矿', 'Farm': '农场', 'Warehouse': '仓库', 'Wall': '城墙', 'Hiding Place': '隐蔽处'
     }
 };
 
-// --- GLOBAL HELPER FUNCTIONS ---
-
-// Translate a key
-function T(key) {
-    if (!STRINGS[LANG]) return key; // Fallback if lang missing
-    return STRINGS[LANG][key] || key; // Return translation or key if missing
-}
-
-// Translate a Database Name (Unit/Building)
-// Handles cases where the DB key might have spaces or specific casing
-function T_Name(dbKey) {
-    return T(dbKey);
-}
+// ... (Keep T() and T_Name() functions) ...
+function T(key) { if (!STRINGS[LANG]) return key; return STRINGS[LANG][key] || key; }
+function T_Name(dbKey) { return T(dbKey); }
