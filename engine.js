@@ -21,7 +21,7 @@ let saveTimeout = null;
 function requestAutoSave() {
     // If a save is already queued, cancel it and restart the timer
     if (saveTimeout) clearTimeout(saveTimeout);
-    
+
     // Wait 2 seconds of inactivity before triggering the heavy save
     saveTimeout = setTimeout(() => {
         engine.save();
@@ -35,13 +35,13 @@ const engine = {
             try {
                 // Load Save
                 var raw = localStorage.getItem('tw_v5_save');
-                
+
                 // Try to decompress. If it fails (old save), use raw string.
                 var decompressed = LZString.decompressFromUTF16(raw);
                 var parsedData = JSON.parse(decompressed || raw);
-                
+
                 state = { ...state, ...parsedData };
-                
+
                 if (!state.selectedVillageId && state.villages.length > 0) {
                     state.selectedVillageId = state.villages[0].id;
                 }
@@ -76,12 +76,12 @@ const engine = {
         if (window.saveLoop) clearInterval(window.saveLoop);
 
         window.gameLoop = setInterval(engine.tick, 1000);
-        
+
         // Backup Interval: Save every 60 seconds regardless of activity
         window.saveLoop = setInterval(engine.save, 60000);
 
         // Save on Tab Close
-        window.onbeforeunload = function() {
+        window.onbeforeunload = function () {
             engine.save();
         };
     },
@@ -109,13 +109,13 @@ const engine = {
             else if (b.includes("Camp") || b.includes("Pit") || b.includes("Mine")) builds[b] = 5;
             else builds[b] = 0;
         }
-    
+
         let units = {}; for (let u in DB.units) units[u] = 0;
         let techs = {}; for (let u in DB.units) techs[u] = 1;
-    
+
         // Helper for random numbers
         const r = engine.rand;
-    
+
         if (owner === "enemy") {
             // --- ENEMY LOGIC (Stronger) ---
             builds["Wall"] = r(1, 3);
@@ -128,39 +128,39 @@ const engine = {
             builds["Iron Mine"] = r(10, 15);
             builds["Smithy"] = r(0, 2);
             builds["Market"] = r(0, 4);
-    
+
             units["Spear"] = r(200, 500);
             units["Sword"] = r(200, 500);
             units["Heavy Cav"] = r(20, 80);
             units["Scout"] = r(20, 100);
             if (Math.random() > 0.7) units["Ram"] = r(10, 30);
-    
+
         } else if (owner === "barb") {
             // --- BARB LOGIC (Random, but Weaker than Enemy) ---
             // Resources: 4-10 (Enemy is 10-15)
             builds["Timber Camp"] = r(6, 15);
             builds["Clay Pit"] = r(6, 15);
             builds["Iron Mine"] = r(6, 15);
-            
+
             // Infrastructure: Lower tier
             builds["Headquarters"] = r(1, 5);
             builds["Farm"] = r(1, 5);
             builds["Warehouse"] = r(5, 10);
-            
+
             // Military: Barbs rarely have high tech buildings
-            builds["Barracks"] = r(0, 2); 
+            builds["Barracks"] = r(0, 2);
             builds["Market"] = r(0, 2);
-            
+
         }
-    
+
         const v = {
-            id: Date.now() + Math.random(), x: x, y: y, name: name, owner: owner,
+            id: Date.now() + Math.floor(Math.random() * 100000), x: x, y: y, name: name, owner: owner,
             res: [500, 500, 500], buildings: builds, units: units, techs: techs,
             queues: { build: [], research: [], barracks: [], stable: [], workshop: [], academy: [] },
             stationed: [],
             loyalty: 100, points: 0
         };
-        
+
         v.points = engine.calculatePoints(v);
         state.mapData[`${x},${y}`] = { type: owner, id: v.id, name: name, points: v.points };
         return v;
@@ -311,7 +311,7 @@ const engine = {
     resolveMission: function (m) {
         const origin = state.villages.find(v => v.id === m.originId);
         const target = state.villages.find(v => v.id === m.targetId);
-        
+
         // Helper: Consistent Name Formatting
         const formatName = (v) => v ? `${v.name} (${v.x}|${v.y})` : T('targetVanished');
         const originName = formatName(origin);
@@ -323,22 +323,22 @@ const engine = {
                 target.res[0] += m.resources.wood || 0;
                 target.res[1] += m.resources.clay || 0;
                 target.res[2] += m.resources.iron || 0;
-                
+
                 if (target.owner === 'player') {
-                    state.reports.unshift({ 
-                        title: `💰 Market: ${originName} ➔ ${targetName}`, 
-                        time: new Date().toLocaleTimeString(), 
-                        type: 'neutral', 
-                        content: `<b>From:</b> ${originName}<br><b>To:</b> ${targetName}<hr>Received: 🌲${m.resources.wood} 🧱${m.resources.clay} 🔩${m.resources.iron}` 
+                    state.reports.unshift({
+                        title: `💰 Market: ${originName} ➔ ${targetName}`,
+                        time: new Date().toLocaleTimeString(),
+                        type: 'neutral',
+                        content: `<b>From:</b> ${originName}<br><b>To:</b> ${targetName}<hr>Received: 🌲${m.resources.wood} 🧱${m.resources.clay} 🔩${m.resources.iron}`
                     });
                 }
             }
             if (origin && origin.owner === 'player') {
-                state.reports.unshift({ 
-                    title: `💰 Market: ${originName} ➔ ${targetName}`, 
-                    time: new Date().toLocaleTimeString(), 
-                    type: 'neutral', 
-                    content: `<b>From:</b> ${originName}<br><b>To:</b> ${targetName}<hr>Delivered: 🌲${m.resources.wood} 🧱${m.resources.clay} 🔩${m.resources.iron}` 
+                state.reports.unshift({
+                    title: `💰 Market: ${originName} ➔ ${targetName}`,
+                    time: new Date().toLocaleTimeString(),
+                    type: 'neutral',
+                    content: `<b>From:</b> ${originName}<br><b>To:</b> ${targetName}<hr>Delivered: 🌲${m.resources.wood} 🧱${m.resources.clay} 🔩${m.resources.iron}`
                 });
             }
             if (state.reports.length > CONFIG.maxReports) state.reports = state.reports.slice(0, CONFIG.maxReports);
@@ -350,7 +350,7 @@ const engine = {
         if (m.type === 'support' || m.type === 'return') {
             if (!target) return;
             if (!target.stationed) target.stationed = [];
-            
+
             let stack = target.stationed.find(s => s.originId === m.originId);
             if (!stack) {
                 stack = { originId: m.originId, units: {} };
@@ -361,14 +361,14 @@ const engine = {
             if (m.originId === state.selectedVillageId || m.targetId === state.selectedVillageId) {
                 const icon = m.type === 'return' ? "🔙" : "🛡️";
                 const title = `${icon} ${originName} ➔ ${targetName}`;
-                
-                state.reports.unshift({ 
-                    title: title, 
-                    time: new Date().toLocaleTimeString(), 
-                    type: 'neutral', 
-                    content: `<b>From:</b> ${originName}<br><b>To:</b> ${targetName}<hr>Troops arrived.` 
+
+                state.reports.unshift({
+                    title: title,
+                    time: new Date().toLocaleTimeString(),
+                    type: 'neutral',
+                    content: `<b>From:</b> ${originName}<br><b>To:</b> ${targetName}<hr>Troops arrived.`
                 });
-                
+
                 if (state.reports.length > CONFIG.maxReports) state.reports = state.reports.slice(0, CONFIG.maxReports);
                 ui.renderReports();
             }
@@ -376,15 +376,15 @@ const engine = {
         }
 
         // --- BATTLE PREP ---
-        
+
         // 1. Set Catalog Title
         const reportTitle = `⚔️ ${originName} ➔ ${targetName}`;
-        
+
         let report = { title: reportTitle, time: new Date().toLocaleTimeString(), type: 'neutral', content: '' };
         if (!target) { report.content = T('targetVanished'); state.reports.unshift(report); return; }
 
         const startAtt = { ...m.units };
-        
+
         // Aggregate Defender Units
         const defTotal = { ...target.units };
         if (target.stationed) {
@@ -398,10 +398,10 @@ const engine = {
         const attScouts = m.units["Scout"] || 0;
         const otherAttackingUnits = Object.keys(m.units).some(u => u !== "Scout" && m.units[u] > 0);
         const isPureScout = (attScouts > 0) && !otherAttackingUnits;
-        const isDefender = target.owner === 'player'; 
+        const isDefender = target.owner === 'player';
 
-        let win = false; 
-        let scoutWin = false; 
+        let win = false;
+        let scoutWin = false;
         let lootText = "", loyaltyMsg = "", wallMsg = "", scoutInfo = "";
         let seeRes = false, seeBuild = false, seeOutside = false;
 
@@ -417,16 +417,16 @@ const engine = {
                 scoutsDied = Math.floor(attScouts * ratio);
             }
             m.units["Scout"] -= scoutsDied;
-            
+
             const survivors = m.units["Scout"];
             if (survivors >= 1) {
-                win = true; 
+                win = true;
                 scoutWin = true;
             }
 
             const scoutLevel = (origin && origin.techs) ? (origin.techs["Scout"] || 1) : 1;
             const survRatio = startAtt["Scout"] > 0 ? (survivors / startAtt["Scout"]) : 0;
-            
+
             if (scoutWin) {
                 if (survRatio > 0.50 && scoutLevel >= 1) seeRes = true;
                 if (survRatio > 0.70 && scoutLevel >= 2) seeBuild = true;
@@ -438,13 +438,13 @@ const engine = {
                 <h4>🕵️ Result</h4>
                 <div>Sent: ${attScouts} | Died: <span style="color:red">${scoutsDied}</span> | Survivors: <span style="color:${resultColor}">${survivors}</span></div>
             </div>`;
-        } 
-        
+        }
+
         // --- SCENARIO B: NORMAL COMBAT ---
         else {
             let off = 0, def = 0;
             for (let u in m.units) {
-                if(u !== "Scout") {
+                if (u !== "Scout") {
                     off += m.units[u] * DB.units[u].att * getTechMultiplier(origin?.techs?.[u] || 1);
                 }
             }
@@ -454,27 +454,24 @@ const engine = {
 
             const currentWallLvl = target.buildings["Wall"] || 0;
             let effectiveWallLvl = currentWallLvl;
-            
+
             // 1. Ram Logic (Reduce Wall Level temporarily)
             if (m.units["Ram"] > 0) {
-                // Example: 1 Ram reduces level by 0.05 (needs 20 rams to lower 1 level)
-                // You can tune this math
                 const bonusReduction = Math.floor(m.units["Ram"] / 20);
                 effectiveWallLvl = Math.max(0, currentWallLvl - bonusReduction);
             }
 
-            // 2. Wall Percentage Bonus (e.g. +100% at level 20)
-            const wallBonus = 1 + (effectiveWallLvl * 0.05); 
+            // 2. Wall Percentage Bonus
+            const wallBonus = 1 + (effectiveWallLvl * 0.05);
             def *= wallBonus;
 
-            // 3. NEW: Wall Base Defense (The Wall fights back!)
-            // Example: Each Wall Level adds 20 Defense points (Like having a weak spearman per level)
-            const wallBaseDef = effectiveWallLvl * 20; 
+            // 3. Wall Base Defense
+            const wallBaseDef = effectiveWallLvl * 20;
             def += wallBaseDef;
 
             win = off > def;
-            
-            if(win && m.units["Scout"] > 0) {
+
+            if (win && m.units["Scout"] > 0) {
                 scoutWin = true;
                 seeRes = true;
             }
@@ -489,9 +486,9 @@ const engine = {
             }
 
             const defLossFactor = win ? 1 : lossFactor;
-            const killDef = (obj) => { 
+            const killDef = (obj) => {
                 for (let u in obj) {
-                    obj[u] = Math.max(0, obj[u] - Math.floor(obj[u] * defLossFactor)); 
+                    obj[u] = Math.max(0, obj[u] - Math.floor(obj[u] * defLossFactor));
                 }
             };
             killDef(target.units);
@@ -510,14 +507,14 @@ const engine = {
             if (win && m.units["Noble"] > 0) {
                 const nobleCount = m.units["Noble"];
                 let totalDrop = 0;
-                for(let i=0; i<nobleCount; i++) totalDrop += Math.floor(20 + Math.random() * 16);
-                
+                for (let i = 0; i < nobleCount; i++) totalDrop += Math.floor(20 + Math.random() * 16);
+
                 target.loyalty -= totalDrop;
                 loyaltyMsg = `<div style="color:blue"><b>${T('loyalty')} ${Math.floor(target.loyalty)}!</b> (-${totalDrop})</div>`;
 
                 if (target.loyalty <= 0) {
-                    target.owner = "player"; 
-                    target.loyalty = 25; 
+                    target.owner = "player";
+                    target.loyalty = 25;
                     state.mapData[`${target.x},${target.y}`].type = "player";
                     m.units["Noble"] = Math.max(0, m.units["Noble"] - 1);
                     loyaltyMsg += `<div style="background:gold; color:black; padding:5px; text-align:center; margin-top:5px;"><b>🎉 ${T('conquered')} 🎉</b></div>`;
@@ -525,23 +522,50 @@ const engine = {
                 }
             }
 
+            // --- NEW: EVEN LOOT DISTRIBUTION ---
             if (win) {
-                let carry = 0; 
-                for (let u in m.units) carry += m.units[u] * DB.units[u].carry;
+                let capacity = 0;
+                for (let u in m.units) capacity += m.units[u] * DB.units[u].carry;
+
                 let stolen = [0, 0, 0];
-                for (let i = 0; i < 3; i++) {
-                    let take = Math.min(Math.floor(target.res[i]), Math.floor(carry / 3));
-                    stolen[i] = take; target.res[i] -= take; carry -= take;
+
+                // Loop until full or empty
+                while (capacity > 0) {
+                    let availableIndices = [];
+                    if (target.res[0] > 0) availableIndices.push(0);
+                    if (target.res[1] > 0) availableIndices.push(1);
+                    if (target.res[2] > 0) availableIndices.push(2);
+
+                    if (availableIndices.length === 0) break; // Village Empty
+
+                    // Calculate split share
+                    let share = Math.floor(capacity / availableIndices.length);
+                    if (share === 0) share = 1; // Force take at least 1 if cap is low
+
+                    let takenThisRound = 0;
+
+                    availableIndices.forEach(i => {
+                        if (capacity <= 0) return;
+                        // Take the smaller of: Available, Share, or Cap
+                        let take = Math.min(Math.floor(target.res[i]), share, capacity);
+
+                        stolen[i] += take;
+                        target.res[i] -= take;
+                        capacity -= take;
+                        takenThisRound += take;
+                    });
+
+                    if (takenThisRound === 0) break; // Safety break
                 }
-                for (let i = 0; i < 3; i++) {
-                    if(carry<=0) break;
-                    let take = Math.min(Math.floor(target.res[i]), carry);
-                    stolen[i] += take; target.res[i] -= take; carry -= take;
-                }
-                
+
                 if (stolen[0] + stolen[1] + stolen[2] > 0) {
                     lootText = `<hr>💰 ${T('loot')}: 🌲${stolen[0]} 🧱${stolen[1]} 🔩${stolen[2]}`;
-                    if (origin) { origin.res[0] += stolen[0]; origin.res[1] += stolen[1]; origin.res[2] += stolen[2]; }
+                    // Auto-return loot to origin immediately (for simplicity in this model)
+                    if (origin) {
+                        origin.res[0] += stolen[0];
+                        origin.res[1] += stolen[1];
+                        origin.res[2] += stolen[2];
+                    }
                 }
             }
         }
@@ -590,36 +614,36 @@ const engine = {
             if (seeBuild) {
                 intelHTML += `<div style="font-size:11px; margin-top:5px;"><b>Buildings:</b> `;
                 let bStr = [];
-                for(let b in target.buildings) if(target.buildings[b]>0) bStr.push(`${T_Name(b)} ${target.buildings[b]}`);
+                for (let b in target.buildings) if (target.buildings[b] > 0) bStr.push(`${T_Name(b)} ${target.buildings[b]}`);
                 intelHTML += bStr.join(", ") + "</div>";
             }
         }
         if (scoutWin && seeOutside) {
-             let outsideCount = {};
-             let foundOutside = false;
-             state.missions.forEach(mis => {
-                 if (mis.originId === target.id) {
-                     for (let u in mis.units) { outsideCount[u] = (outsideCount[u] || 0) + mis.units[u]; foundOutside = true; }
-                 }
-             });
-             state.villages.forEach(vil => {
-                 if (vil.stationed) {
-                     vil.stationed.forEach(s => {
-                         if (s.originId === target.id) {
-                             for (let u in s.units) { outsideCount[u] = (outsideCount[u] || 0) + s.units[u]; foundOutside = true; }
-                         }
-                     });
-                 }
-             });
-             intelHTML += `<div style="font-size:11px; margin-top:5px; border-top:1px solid #ccc;"><b>Outside:</b> `;
-             if (foundOutside) {
-                 let uStr = [];
-                 for (let u in outsideCount) uStr.push(`${T_Name(u)} ${outsideCount[u]}`);
-                 intelHTML += uStr.join(", ");
-             } else {
-                 intelHTML += "None";
-             }
-             intelHTML += "</div>";
+            let outsideCount = {};
+            let foundOutside = false;
+            state.missions.forEach(mis => {
+                if (mis.originId === target.id) {
+                    for (let u in mis.units) { outsideCount[u] = (outsideCount[u] || 0) + mis.units[u]; foundOutside = true; }
+                }
+            });
+            state.villages.forEach(vil => {
+                if (vil.stationed) {
+                    vil.stationed.forEach(s => {
+                        if (s.originId === target.id) {
+                            for (let u in s.units) { outsideCount[u] = (outsideCount[u] || 0) + s.units[u]; foundOutside = true; }
+                        }
+                    });
+                }
+            });
+            intelHTML += `<div style="font-size:11px; margin-top:5px; border-top:1px solid #ccc;"><b>Outside:</b> `;
+            if (foundOutside) {
+                let uStr = [];
+                for (let u in outsideCount) uStr.push(`${T_Name(u)} ${outsideCount[u]}`);
+                intelHTML += uStr.join(", ");
+            } else {
+                intelHTML += "None";
+            }
+            intelHTML += "</div>";
         }
 
         // 2. Set Detailed View Header
@@ -647,9 +671,9 @@ const engine = {
 
         state.reports.unshift(report);
         if (state.reports.length > CONFIG.maxReports) state.reports = state.reports.slice(0, CONFIG.maxReports);
-        
+
         ui.renderReports();
-        requestAutoSave(); 
+        requestAutoSave();
     },
 
     // --- SAVE FUNCTION (Hard Save) ---
@@ -701,22 +725,22 @@ const engine = {
     resetGame: function () {
         if (confirm("Delete progress?")) {
             // 1. Kill the "Save on Exit" trigger (The most likely culprit)
-            window.onbeforeunload = null; 
-    
+            window.onbeforeunload = null;
+
             // 2. Neutralize the save function itself 
             // (Prevents auto-save loops from writing data in the milliseconds before reload)
             // Assuming your save function is on this object or global:
-            this.saveGame = function() { console.log("Save blocked by reset."); }; 
-    
+            this.saveGame = function () { console.log("Save blocked by reset."); };
+
             // 3. Wipe the data
             localStorage.removeItem("tw_v5_save");
-    
+
             // 4. Reload
             location.reload();
         }
     },
     getStorage: function (v) { return Math.round(1000 * Math.pow(1.23, v.buildings["Warehouse"] - 1)); },
-    
+
     spawnAiAttack: function () {
         // 1. Pick a target (Random player village)
         const playerVillages = state.villages.filter(v => v.owner === 'player');
@@ -736,14 +760,14 @@ const engine = {
         // 3. Generate Army (Scaled by config)
         // Simple formula: 1 Axe per 10 points of the target village * Strength Config
         const armySize = Math.max(10, Math.floor((target.points / 10) * CONFIG.aiAttackStrength));
-        
+
         const units = { "Axe": armySize, "Light Cav": Math.floor(armySize / 3) };
         if (Math.random() > 0.5) units["Ram"] = Math.floor(armySize / 10);
 
         // 4. Launch Mission
         const dist = Math.sqrt(Math.pow(origin.x - target.x, 2) + Math.pow(origin.y - target.y, 2));
         const duration = dist * 60 * 1000; // 1 minute per tile (standard speed)
-        
+
         state.missions.push({
             originId: origin.id,
             targetId: target.id,
