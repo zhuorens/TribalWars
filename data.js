@@ -1,11 +1,11 @@
 const DB = {
     buildings: {
-        "Headquarters": { base: [90, 80, 70], factor: 1.26, pop: 0, time: 90, points: 10, maxLevel: 30, desc: "减少建筑时间" },
-        "Timber Camp": { base: [50, 0, 0], factor: 1.25, pop: 1, time: 60, points: 1, maxLevel: 30, desc: "生产木材" },
-        "Clay Pit": { base: [0, 50, 0], factor: 1.25, pop: 1, time: 60, points: 1, maxLevel: 30, desc: "生产粘土" },
-        "Iron Mine": { base: [0, 0, 50], factor: 1.25, pop: 1, time: 60, points: 1, maxLevel: 30, desc: "生产铁矿" },
+        "Headquarters": { base: [90, 80, 70], factor: 1.26, pop: 2, time: 90, points: 10, maxLevel: 30, desc: "减少建筑时间" },
+        "Timber Camp": { base: [50, 60, 40], factor: 1.25, pop: 1, time: 60, points: 1, maxLevel: 30, desc: "生产木材" },
+        "Clay Pit": { base: [65, 50, 40], factor: 1.25, pop: 2, time: 60, points: 1, maxLevel: 30, desc: "生产粘土" },
+        "Iron Mine": { base: [75, 65, 70], factor: 1.25, pop: 2, time: 60, points: 1, maxLevel: 30, desc: "生产铁矿" },
         "Farm": { base: [45, 40, 30], factor: 1.30, pop: 0, time: 120, points: 5, maxLevel: 30, desc: "增加人口上限" },
-        "Warehouse": { base: [60, 50, 40], factor: 1.28, pop: 0, time: 100, points: 5, maxLevel: 30, desc: "增加资源存储上限" },
+        "Warehouse": { base: [60, 50, 40], factor: 1.27, pop: 0, time: 100, points: 5, maxLevel: 30, desc: "增加资源存储上限" },
 
         "Barracks": { base: [200, 170, 90], factor: 1.26, pop: 2, time: 300, points: 10, maxLevel: 25, desc: "训练步兵" },
         "Stable": { base: [270, 240, 260], factor: 1.26, pop: 4, time: 600, points: 15, maxLevel: 20, desc: "训练骑兵" },
@@ -18,7 +18,7 @@ const DB = {
             base: [100, 100, 100],
             factor: 1.2,
             time: 60,
-            pop: 2,
+            pop: 5,
             maxLevel: 25,
             desc: "运输资源",
             points: 10

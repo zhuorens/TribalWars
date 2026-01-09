@@ -190,9 +190,9 @@ const engine = {
         state.villages.forEach(v => {
             // Production (Enemies generate resources here too!)
             const cap = engine.getStorage(v);
-            const wood = (30 * Math.pow(1.16, v.buildings["Timber Camp"])) / 3600 * dt;
-            const clay = (30 * Math.pow(1.16, v.buildings["Clay Pit"])) / 3600 * dt;
-            const iron = (30 * Math.pow(1.16, v.buildings["Iron Mine"])) / 3600 * dt;
+            const wood = (60 * Math.pow(1.16, v.buildings["Timber Camp"])) / 3600 * dt;
+            const clay = (60 * Math.pow(1.16, v.buildings["Clay Pit"])) / 3600 * dt;
+            const iron = (60 * Math.pow(1.16, v.buildings["Iron Mine"])) / 3600 * dt;
     
             v.res[0] = Math.min(cap, v.res[0] + wood);
             v.res[1] = Math.min(cap, v.res[1] + clay);
@@ -434,11 +434,23 @@ const engine = {
 
             const currentWallLvl = target.buildings["Wall"] || 0;
             let effectiveWallLvl = currentWallLvl;
+            
+            // 1. Ram Logic (Reduce Wall Level temporarily)
             if (m.units["Ram"] > 0) {
+                // Example: 1 Ram reduces level by 0.05 (needs 20 rams to lower 1 level)
+                // You can tune this math
                 const bonusReduction = Math.floor(m.units["Ram"] / 20);
                 effectiveWallLvl = Math.max(0, currentWallLvl - bonusReduction);
             }
-            def *= (1 + (effectiveWallLvl * 0.05));
+
+            // 2. Wall Percentage Bonus (e.g. +100% at level 20)
+            const wallBonus = 1 + (effectiveWallLvl * 0.05); 
+            def *= wallBonus;
+
+            // 3. NEW: Wall Base Defense (The Wall fights back!)
+            // Example: Each Wall Level adds 20 Defense points (Like having a weak spearman per level)
+            const wallBaseDef = effectiveWallLvl * 20; 
+            def += wallBaseDef;
 
             win = off > def;
             
@@ -662,7 +674,7 @@ const engine = {
             location.reload();
         }
     },
-    getStorage: function (v) { return Math.floor(DB.buildings.Warehouse.base[0] * Math.pow(DB.buildings.Warehouse.factor, v.buildings["Warehouse"])); },
+    getStorage: function (v) { return Math.round(1000 * Math.pow(1.23, v.buildings["Warehouse"] - 1)); },
     spawnAiAttack: function() {
         // 1. Pick a target (Random player village)
         const playerVillages = state.villages.filter(v => v.owner === 'player');

@@ -6,7 +6,7 @@ const ui = {
         ui.initCheatDropdown();
         ui.updateInterfaceText(); // <--- Initializes text based on default LANG
         ui.refresh();
-        ui.showTab('hq', document.querySelector('.tab-btn')); 
+        ui.showTab('hq', document.querySelector('.tab-btn'));
     },
 
     initCheatDropdown: function () {
@@ -26,8 +26,8 @@ const ui = {
         if (!STRINGS[l]) { console.error("Language not found:", l); return; }
         LANG = l;
         ui.updateInterfaceText();
-        ui.refresh(); 
-        ui.renderMap(); 
+        ui.refresh();
+        ui.renderMap();
         ui.initCheatDropdown(); // Refresh dropdown names
     },
 
@@ -203,9 +203,9 @@ const ui = {
         }
         unitHtml += '</table>';
 
-        const woodRate = Math.floor(30 * Math.pow(1.16, v.buildings["Timber Camp"]));
-        const clayRate = Math.floor(30 * Math.pow(1.16, v.buildings["Clay Pit"]));
-        const ironRate = Math.floor(30 * Math.pow(1.16, v.buildings["Iron Mine"]));
+        const woodRate = Math.floor(60 * Math.pow(1.16, v.buildings["Timber Camp"]));
+        const clayRate = Math.floor(60 * Math.pow(1.16, v.buildings["Clay Pit"]));
+        const ironRate = Math.floor(60 * Math.pow(1.16, v.buildings["Iron Mine"]));
 
         // TRANSLATED HEADERS
         info.innerHTML = `
@@ -240,7 +240,7 @@ const ui = {
             const bLvl = v.buildings[b] || 0;
             const isLocked = bLvl === 0;
             const color = isLocked ? "red" : "#666";
-            
+
             div.innerHTML += `<div style="width:100%; font-weight:bold; margin-top:10px; border-bottom:1px solid #ccc;">
                 ${T_Name(b)} <span style="font-size:11px; color:${color}">(Lv ${bLvl})</span>
             </div>`;
@@ -291,10 +291,10 @@ const ui = {
             const found = state.villages.find(v => v.id === t.id);
             if (found) target = found;
         }
-        
+
         ui.selTile = target;
         const v = engine.getCurrentVillage();
-        const owner = target.owner || target.type; 
+        const owner = target.owner || target.type;
         const isMyVillage = owner === 'player' && state.villages.some(vil => vil.id === target.id);
 
         let html = "";
@@ -311,8 +311,8 @@ const ui = {
         }
 
         const coords = (target.x !== undefined && target.y !== undefined) ? `(${target.x}|${target.y})` : "";
-        const titleText = isMyVillage 
-            ? `${target.name} ${coords} - ${T('village')}` 
+        const titleText = isMyVillage
+            ? `${target.name} ${coords} - ${T('village')}`
             : `${T('target')}: ${target.name} ${coords}`;
 
         document.getElementById('a-modal-title').innerText = titleText;
@@ -320,8 +320,8 @@ const ui = {
 
         const footer = document.querySelector('#attack-modal .modal-actions');
         const marketLvl = v.buildings["Market"] || 0;
-        const resBtn = marketLvl > 0 
-            ? `<button class="btn btn-blue" onclick="ui.closeAttackModal(); ui.openMarketModal(${target.id})">💰 ${T('transport')}</button>` 
+        const resBtn = marketLvl > 0
+            ? `<button class="btn btn-blue" onclick="ui.closeAttackModal(); ui.openMarketModal(${target.id})">💰 ${T('transport')}</button>`
             : '';
 
         // TRANSLATED BUTTONS
@@ -389,7 +389,7 @@ const ui = {
     },
 
     updateLoop: function () { ui.refresh(); ui.updateMissions(); },
-    
+
     renderHeader: function (v) {
         const select = document.getElementById('village-select');
         const playerVillages = state.villages.filter(vil => vil.owner === 'player');
@@ -404,15 +404,15 @@ const ui = {
         }
         select.value = v.id;
     },
-    
+
     switchVillage: function (id) { state.selectedVillageId = parseFloat(id); ui.refresh(); const v = engine.getCurrentVillage(); state.mapView.x = v.x; state.mapView.y = v.y; ui.renderMap(); },
-    
-    renameVillage: function () { 
-        const v = engine.getCurrentVillage(); 
-        const newName = prompt(T('rename'), v.name); 
-        if (newName) { v.name = newName; state.mapData[`${v.x},${v.y}`].name = newName; ui.refresh(); engine.save(); } 
+
+    renameVillage: function () {
+        const v = engine.getCurrentVillage();
+        const newName = prompt(T('rename'), v.name);
+        if (newName) { v.name = newName; state.mapData[`${v.x},${v.y}`].name = newName; ui.refresh(); engine.save(); }
     },
-    
+
     renderVillage: function () {
         const v = engine.getCurrentVillage();
         const map = document.getElementById('village-map');
@@ -442,7 +442,7 @@ const ui = {
             map.appendChild(div);
         }
     },
-    
+
     openBuildingModal: function (bName) {
         ui.selBuild = bName;
         const v = engine.getCurrentVillage();
@@ -452,7 +452,7 @@ const ui = {
         if (bName === "Smithy") {
             document.getElementById('b-modal-title').innerText = T_Name("Smithy");
             // Hardcoded description, could be added to DB/Strings later
-            document.getElementById('b-modal-desc').innerText = "Research units and upgrade the building."; 
+            document.getElementById('b-modal-desc').innerText = "Research units and upgrade the building.";
 
             let html = "<div style='display:grid; grid-template-columns: 1fr 1fr; gap:5px; max-height:200px; overflow-y:auto; margin-bottom:10px;'>";
             for (let u in DB.units) {
@@ -480,8 +480,14 @@ const ui = {
                 Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)),
                 Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
             ];
-            const tSeconds = Math.floor(d.time * Math.pow(1.2, virtualLvl));
+            // 1. Get HQ Level
+            const hqLvl = v.buildings["Headquarters"] || 1;
 
+            // 2. Calculate Speed Modifier (5% faster per HQ level)
+            const speedMod = Math.pow(0.95, hqLvl);
+
+            // 3. Calculate Final Time
+            const tSeconds = Math.floor(d.time * Math.pow(1.2, virtualLvl) * speedMod);
             let queueStatus = "";
             if (queuedCount > 0) {
                 queueStatus = `<div style="color:blue; font-size:11px; margin-bottom:5px;">${T('check_queue').replace('%s', queuedCount)}</div>`;
@@ -573,9 +579,9 @@ const ui = {
                     const pts = t.points ? `\n<span style='font-size:7px'>${t.points}</span>` : "";
                     const icon = t.type === "player" ? "🏰" : (t.type === "enemy" ? "🏯" : "🛖");
                     // Translating Map Names if possible, else fallback
-                    let displayName = T_Name(t.name); 
-                    if (!STRINGS[LANG][t.name]) displayName = t.name; 
-                    
+                    let displayName = T_Name(t.name);
+                    if (!STRINGS[LANG][t.name]) displayName = t.name;
+
                     d.innerHTML = `${icon}<div class="tile-name">${displayName}</div>${pts}`;
                     d.onclick = (e) => {
                         e.stopPropagation();
@@ -607,7 +613,7 @@ const ui = {
             ctx.fillStyle = v.owner === 'player' ? '#FFFF00' : (v.owner === 'enemy' ? '#FF0000' : '#888888');
             ctx.fillRect(mx, my, 2, 2);
         });
-        const viewTiles = 15; 
+        const viewTiles = 15;
         const rectSize = viewTiles * scale;
         const vx = state.mapView.x * scale;
         const vy = state.mapView.y * scale;

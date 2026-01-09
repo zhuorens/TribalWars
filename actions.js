@@ -37,11 +37,11 @@ const game = {
         
         // 2. Queue Limit Check
         if (v.queues.build.length >= CONFIG.buildQueueLimit) {
-            alert("Queue is full!");
+            alert(T('queue_full'));
             return;
         }
 
-        // 3. Cost Calculation (based on Virtual Level)
+        // 3. Cost Calculation
         const c = [
             Math.floor(d.base[0] * Math.pow(d.factor, virtualLvl)), 
             Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)), 
@@ -52,11 +52,12 @@ const game = {
             // Deduct Resources
             v.res[0] -= c[0]; v.res[1] -= c[1]; v.res[2] -= c[2];
             
-            // Calculate Duration
-            const duration = Math.floor(d.time * Math.pow(1.2, virtualLvl)) * 1000;
+            // --- NEW: Calculate Duration with HQ Bonus ---
+            const hqLvl = v.buildings["Headquarters"] || 1;
+            const speedMod = Math.pow(0.95, hqLvl); 
+            const duration = Math.floor(d.time * Math.pow(1.2, virtualLvl) * speedMod) * 1000;
             
             // Calculate Start/Finish Time
-            // If queue is empty, start NOW. If busy, start after the last one finishes.
             const lastFinish = v.queues.build.length > 0 
                 ? v.queues.build[v.queues.build.length - 1].finish 
                 : Date.now();
@@ -69,7 +70,8 @@ const game = {
             
             ui.refresh(); 
             engine.save();
-            // Note: We removed ui.closeBuildingModal() here so you can keep clicking
+        } else {
+            alert(T('resLimit'));
         }
     },
     recruit: function (u) { const amt = parseInt(prompt("Amount?") || 0); game.processRecruit(u, amt); },
