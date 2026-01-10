@@ -11,7 +11,7 @@ const CONFIG = {
     aiGrowthChance: 0.5, // 50% chance to succeed per check
 
     aiAttackEnabled: true,
-    aiAttackInterval: 120 * 60 * 1000, // Check for attack every 10 minutes
+    aiAttackInterval: 90 * 60 * 1000, // Check for attack every 10 minutes
     aiAttackChance: 0.1, // 30% chance to attack when interval hits
     aiAttackRange: 15, // Max distance tiles
     aiAttackStrength: 0.4 // Multiplier relative to player points (0.5 = 50% of player strength)

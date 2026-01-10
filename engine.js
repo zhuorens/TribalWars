@@ -219,10 +219,12 @@ const engine = {
     },
 
     tick: function () {
-        const dt = (Date.now() - state.lastTick) / 1000;
-        state.lastTick = Date.now();
+        const now = Date.now();
+        const dt = (now - state.lastTick) / 1000;
+        state.lastTick = now;
 
         state.villages.forEach(v => {
+            // --- 1. Resources & Loyalty ---
             const cap = engine.getStorage(v);
             const wood = (60 * Math.pow(1.16, v.buildings["Timber Camp"])) / 3600 * dt;
             const clay = (60 * Math.pow(1.16, v.buildings["Clay Pit"])) / 3600 * dt;
@@ -234,39 +236,89 @@ const engine = {
 
             if (v.loyalty < 100) v.loyalty = Math.min(100, v.loyalty + (dt / 3600));
 
-            const processQ = (type, action) => {
+            // --- 2. Building & Research Queues (Batch Finish) ---
+            // These complete ONLY when the full duration is done
+            const processStandardQ = (type, action) => {
                 const q = v.queues[type];
                 if (q.length > 0) {
                     const item = q[0];
-                    if (!item.finish) item.finish = Date.now() + item.duration;
+                    if (!item.finish) item.finish = now + item.duration;
 
-                    if (Date.now() >= item.finish) {
-                        action(q.shift());
+                    if (now >= item.finish) {
+                        action(q.shift()); // Remove and execute
+
+                        // Trigger Updates
                         if (type === 'build') {
                             v.points = engine.calculatePoints(v);
                             if (state.mapData[`${v.x},${v.y}`]) state.mapData[`${v.x},${v.y}`].points = v.points;
                         }
+
+                        // Prepare next item
                         if (q.length > 0) {
-                            q[0].finish = Date.now() + q[0].duration;
+                            q[0].finish = now + q[0].duration;
                         }
                         ui.refresh();
-                        // Auto-save on completion
                         requestAutoSave();
                     }
                 }
             };
 
-            processQ('build', (item) => v.buildings[item.building]++);
-            processQ('research', (item) => { if (!v.techs) v.techs = {}; v.techs[item.unit] = (v.techs[item.unit] || 1) + 1; });
-            ['barracks', 'stable', 'workshop', 'academy'].forEach(q => {
-                processQ(q, (item) => v.units[item.unit] += item.count);
+            processStandardQ('build', (item) => v.buildings[item.building]++);
+            processStandardQ('research', (item) => {
+                if (!v.techs) v.techs = {};
+                v.techs[item.unit] = (v.techs[item.unit] || 1) + 1;
+            });
+
+            // --- 3. Unit Queues (Continuous Production) ---
+            // These produce 1 unit at a time
+            ['barracks', 'stable', 'workshop', 'academy'].forEach(qType => {
+                const q = v.queues[qType];
+                if (!q || q.length === 0) return;
+
+                let active = q[0];
+
+                // Initialize start time if new
+                if (active.finish === null || active.finish === undefined) {
+                    active.finish = now + active.unitTime;
+                }
+
+                // Catch-up Loop: Process all units that finished since last tick
+                let unitsProduced = false;
+                while (active && now >= active.finish) {
+                    // A. Produce Unit
+                    if (!v.units[active.unit]) v.units[active.unit] = 0;
+                    v.units[active.unit]++;
+                    unitsProduced = true;
+
+                    // B. Decrement Count
+                    active.count--;
+
+                    // C. Check if Batch Complete
+                    if (active.count <= 0) {
+                        q.shift(); // Remove batch
+
+                        if (q.length > 0) {
+                            // Start next batch immediately (preserve time overflow)
+                            const next = q[0];
+                            next.finish = active.finish + next.unitTime;
+                            active = next;
+                        } else {
+                            active = null;
+                        }
+                    } else {
+                        // Batch continues: Set time for NEXT unit
+                        active.finish += active.unitTime;
+                    }
+                }
+                if (unitsProduced) {
+                    ui.refresh();
+                    requestAutoSave();
+                }
             });
         });
 
-        // AI Growth & Attacks
-        const now = Date.now();
+        // --- 4. AI Growth ---
         if (!state.nextAiGrowth) state.nextAiGrowth = now + CONFIG.aiGrowthInterval;
-
         if (now > state.nextAiGrowth) {
             state.nextAiGrowth = now + CONFIG.aiGrowthInterval;
             state.villages.forEach(v => {
@@ -289,6 +341,7 @@ const engine = {
             if (document.getElementById('map').classList.contains('active')) ui.renderMap();
         }
 
+        // --- 5. AI Attacks ---
         if (CONFIG.aiAttackEnabled) {
             if (!state.nextAiCheck) state.nextAiCheck = now + CONFIG.aiAttackInterval;
             if (now > state.nextAiCheck) {
@@ -299,9 +352,9 @@ const engine = {
             }
         }
 
-        // Missions
+        // --- 6. Missions ---
         state.missions = state.missions.filter(m => {
-            if (Date.now() >= m.arrival) { engine.resolveMission(m); return false; }
+            if (now >= m.arrival) { engine.resolveMission(m); return false; }
             return true;
         });
 
@@ -349,24 +402,40 @@ const engine = {
         // --- SUPPORT / RETURN ---
         if (m.type === 'support' || m.type === 'return') {
             if (!target) return;
-            if (!target.stationed) target.stationed = [];
 
-            let stack = target.stationed.find(s => s.originId === m.originId);
-            if (!stack) {
-                stack = { originId: m.originId, units: {} };
-                target.stationed.push(stack);
+            if (m.type === 'return') {
+                // CASE A: Returning Home
+                for (let u in m.units) {
+                    target.units[u] = (target.units[u] || 0) + m.units[u];
+                }
+            } else {
+                // CASE B: Support Arriving
+                if (!target.stationed) target.stationed = [];
+
+                let stack = target.stationed.find(s => s.originId === m.originId);
+                if (!stack) {
+                    stack = { originId: m.originId, units: {} };
+                    target.stationed.push(stack);
+                }
+                for (let u in m.units) stack.units[u] = (stack.units[u] || 0) + m.units[u];
             }
-            for (let u in m.units) stack.units[u] = (stack.units[u] || 0) + m.units[u];
 
+            // Report Generation
             if (m.originId === state.selectedVillageId || m.targetId === state.selectedVillageId) {
                 const icon = m.type === 'return' ? "🔙" : "🛡️";
                 const title = `${icon} ${originName} ➔ ${targetName}`;
+
+                // CHANGED: Use T() for internationalization
+                const msg = m.type === 'return'
+                    ? T('troops_returned')
+                    : T('troops_arrived');
 
                 state.reports.unshift({
                     title: title,
                     time: new Date().toLocaleTimeString(),
                     type: 'neutral',
-                    content: `<b>From:</b> ${originName}<br><b>To:</b> ${targetName}<hr>Troops arrived.`
+                    // CHANGED: Use T() for headers
+                    content: `<b>${T('from')}:</b> ${originName}<br><b>${T('to')}:</b> ${targetName}<hr>${msg}`
                 });
 
                 if (state.reports.length > CONFIG.maxReports) state.reports = state.reports.slice(0, CONFIG.maxReports);

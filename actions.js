@@ -85,23 +85,54 @@ const game = {
     },
     processRecruit: function (u, amt) {
         if (amt <= 0) return;
-        const v = engine.getCurrentVillage(); const d = DB.units[u];
+        const v = engine.getCurrentVillage();
+        const d = DB.units[u];
+    
+        // 1. Calculate Costs
         const popCost = d.pop * amt;
         const popCurrent = parseInt(document.getElementById('pop-current').innerText);
         const popMax = parseInt(document.getElementById('pop-max').innerText);
+    
         if (popCurrent + popCost > popMax) { alert(T('popLimit')); return; }
+    
         const c = [d.cost[0] * amt, d.cost[1] * amt, d.cost[2] * amt];
+    
+        // 2. Resource Check
         if (v.res[0] >= c[0] && v.res[1] >= c[1] && v.res[2] >= c[2]) {
+            // Deduct Resources
             v.res[0] -= c[0]; v.res[1] -= c[1]; v.res[2] -= c[2];
+    
             const qType = d.building.toLowerCase();
             const q = v.queues[qType];
-            const duration = d.time * amt * 1000;
-            const lastFinish = q.length > 0 ? q[q.length - 1].finish : Date.now();
-            q.push({ unit: u, count: amt, duration: duration, finish: lastFinish + duration });
-            ui.refresh(); 
-            // CHANGED: Use soft save
+    
+            // 3. Calculate Time Per Unit (Applying Building Speed)
+            const bLvl = v.buildings[d.building] || 1;
+            // Example: Standard speed formula (0.96 ^ level). Adjust as needed.
+            const speedFactor = Math.pow(0.96, bLvl); 
+            const unitTime = d.time * 1000 * speedFactor; 
+    
+            // 4. Add to Queue
+            // Check if the last item is the same unit. If so, just add to the pile.
+            const lastItem = q.length > 0 ? q[q.length - 1] : null;
+    
+            if (lastItem && lastItem.unit === u) {
+                lastItem.count += amt;
+            } else {
+                // We set 'finish' to NULL initially. 
+                // The engine loop will set the start time when this batch reaches the front.
+                q.push({ 
+                    unit: u, 
+                    count: amt, 
+                    unitTime: unitTime, 
+                    finish: null 
+                });
+            }
+    
+            ui.refresh();
             requestAutoSave();
-        } else { alert(T('resLimit')); }
+        } else {
+            alert(T('resLimit'));
+        }
     },
     research: function (u) {
         const v = engine.getCurrentVillage(); if (!v.techs) v.techs = {}; const curLvl = v.techs[u] || 1; const maxLvl = DB.units[u].maxLevel || 3;

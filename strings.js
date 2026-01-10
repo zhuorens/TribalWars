@@ -76,6 +76,9 @@ const STRINGS = {
         'confirm_transport': 'Confirm Transport',
         'managing_alert': 'You are currently managing this village.',
         'rename': 'Name:',
+        'troops_returned': "Troops have returned home.",
+        'troops_arrived': "Stationed troops arrived.",
+        'to': "To",
         
         // ... (Keep UNIT NAMES and BUILDING NAMES) ...
         'Spear': 'Spearman', 'Sword': 'Swordsman', 'Axe': 'Axeman', 'Archer': 'Archer', 'Scout': 'Scout', 'Light Cav': 'Light Cavalry', 'Heavy Cav': 'Heavy Cavalry', 'Ram': 'Ram', 'Catapult': 'Catapult', 'Noble': 'Nobleman',
@@ -116,6 +119,9 @@ const STRINGS = {
         'confirm_transport': '确认运输',
         'managing_alert': '你正在管理该村庄。',
         'rename': '名称:',
+        'troops_returned': "部队已返回大本营。",
+        'troops_arrived': "增援部队已抵达。",
+        'to': "前往",
 
         // ... (Keep UNIT NAMES and BUILDING NAMES) ...
         'Spear': '长矛兵', 'Sword': '剑士', 'Axe': '斧头兵', 'Archer': '弓箭手', 'Scout': '侦察兵', 'Light Cav': '轻骑兵', 'Heavy Cav': '重骑兵', 'Ram': '冲车', 'Catapult': '投石车', 'Noble': '贵族',

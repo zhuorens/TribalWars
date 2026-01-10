@@ -112,9 +112,28 @@ const ui = {
         ['barracks', 'stable', 'workshop', 'academy'].forEach(qName => {
             if (v.queues[qName].length > 0) {
                 qHTML += `<div style="font-size:10px; font-weight:bold; color:#666; margin-top:2px; text-transform:uppercase;">${T_Name(qName.charAt(0).toUpperCase() + qName.slice(1))}</div>`;
+                
                 v.queues[qName].forEach((item, idx) => {
-                    const rem = Math.max(0, item.finish - Date.now());
-                    qHTML += `<div class="q-item">⚔️ <b>${T_Name(item.unit)}</b> (${item.count}) <span class="timer">${formatTime(rem)}</span> <button class="btn-x" onclick="game.cancel('${qName}', ${idx})">❌</button></div>`;
+                    let totalRem = 0;
+        
+                    if (idx === 0) {
+                        // --- ACTIVE BATCH ---
+                        // 1. Time remaining for the ONE unit currently being built
+                        // If finish is not set yet (just added), assume full unitTime
+                        const nextFinish = item.finish || (Date.now() + item.unitTime);
+                        const timeForCurrent = Math.max(0, nextFinish - Date.now());
+                        
+                        // 2. Time for the remaining units in this stack
+                        const timeForRest = Math.max(0, item.count - 1) * item.unitTime;
+                        
+                        totalRem = timeForCurrent + timeForRest;
+                    } else {
+                        // --- WAITING BATCH ---
+                        // These haven't started, so duration is full count * time per unit
+                        totalRem = item.count * item.unitTime;
+                    }
+        
+                    qHTML += `<div class="q-item">⚔️ <b>${T_Name(item.unit)}</b> (${item.count}) <span class="timer">${formatTime(totalRem)}</span> <button class="btn-x" onclick="game.cancel('${qName}', ${idx})">❌</button></div>`;
                 });
             }
         });
@@ -630,20 +649,20 @@ const ui = {
             if (m.type === 'attack') {
                 const myVillages = state.villages.filter(v => v.owner === 'player').map(v => v.id);
                 if (myVillages.includes(m.targetId)) {
-                    text = `⚔️ <b>${T('incoming')}</b> ${T('from')} <br>${originName} <br>➔ ${targetName}`;
+                    text = `<b>${T('incoming')}</b> ${T('from')} <br>${originName} <br>➔ ${targetName}`;
                     colorClass = "mission-incoming"; icon = "🚨";
                 } else {
-                    text = `⚔️ ${T('attack')} -> ${targetName}`;
+                    text = `${T('attack')} -> ${targetName}`;
                     colorClass = "mission-attack"; icon = "⚔️";
                 }
             } else if (m.type === 'support') {
-                text = `🛡️ ${T('support')} ➔ ${targetName}`;
+                text = `${T('support')} ➔ ${targetName}`;
                 colorClass = "mission-support"; icon = "🛡️";
             } else if (m.type === 'transport') {
-                text = `💰 ${T('transport')} ➔ ${targetName}`;
+                text = `${T('transport')} ➔ ${targetName}`;
                 colorClass = "mission-transport"; icon = "💰";
             } else {
-                text = `🔙 ${T('return')}`;
+                text = `${T('return')}`;
                 colorClass = "mission-return"; icon = "🔙";
             }
 
