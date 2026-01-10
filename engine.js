@@ -512,11 +512,15 @@ const engine = {
         // --- SCENARIO B: NORMAL COMBAT ---
         else {
             let off = 0, def = 0;
+
+            // 1. Calculate Offense Points
             for (let u in m.units) {
                 if (u !== "Scout") {
                     off += m.units[u] * DB.units[u].att * getTechMultiplier(origin?.techs?.[u] || 1);
                 }
             }
+
+            // 2. Calculate Defense Points
             for (let u in defTotal) {
                 def += defTotal[u] * DB.units[u].def * getTechMultiplier(target.techs?.[u] || 1);
             }
@@ -524,37 +528,50 @@ const engine = {
             const currentWallLvl = target.buildings["Wall"] || 0;
             let effectiveWallLvl = currentWallLvl;
 
-            // 1. Ram Logic (Reduce Wall Level temporarily)
+            // --- RAM TACTICAL STAGE (Before Battle) ---
+            // Rams reduce the wall's DEFENSE BONUS for this battle only.
             if (m.units["Ram"] > 0) {
+                // Example: 1 Ram negates 0.05 levels of Wall Bonus
                 const bonusReduction = Math.floor(m.units["Ram"] / 20);
                 effectiveWallLvl = Math.max(0, currentWallLvl - bonusReduction);
             }
 
-            // 2. Wall Percentage Bonus
+            // Apply Wall Bonus to Defense score
             const wallBonus = 1 + (effectiveWallLvl * 0.05);
             def *= wallBonus;
+            def += (effectiveWallLvl * 20); // Base defense added by wall structure
 
-            // 3. Wall Base Defense
-            const wallBaseDef = effectiveWallLvl * 20;
-            def += wallBaseDef;
-
+            // 3. Determine Winner
             win = off > def;
 
+            // 4. Scout Intel Logic
             if (win && m.units["Scout"] > 0) {
                 scoutWin = true;
                 seeRes = true;
             }
 
+            // 5. CASUALTY CALCULATION
+            // Ratio = Loser / Winner. 
+            // If scores are close (e.g. 1000 vs 900), ratio is 0.9.
+            // If scores are far (e.g. 1000 vs 100), ratio is 0.1.
             const ratio = (off === 0 && def === 0) ? 1 : (win ? (def / off) : (off / def));
+
+            // LossFactor = Ratio ^ 1.5
+            // A close battle (0.9 ratio) results in ~85% casualties for the WINNER.
+            // An easy battle (0.1 ratio) results in ~3% casualties for the WINNER.
             const lossFactor = (off === 0 && def === 0) ? 0 : Math.pow(ratio, 1.5);
 
+            // Apply Losses to Attacker
             if (win) {
+                // Attacker won: They lose a % based on lossFactor
                 for (let u in m.units) m.units[u] -= Math.floor(m.units[u] * lossFactor);
             } else {
+                // Attacker lost: They lose 100%
                 for (let u in m.units) m.units[u] = 0;
             }
 
-            const defLossFactor = win ? 1 : lossFactor;
+            // Apply Losses to Defender
+            const defLossFactor = win ? 1 : lossFactor; // Defender loses 100% if they lost, else lossFactor
             const killDef = (obj) => {
                 for (let u in obj) {
                     obj[u] = Math.max(0, obj[u] - Math.floor(obj[u] * defLossFactor));
@@ -563,13 +580,43 @@ const engine = {
             killDef(target.units);
             if (target.stationed) target.stationed.forEach(s => killDef(s.units));
 
-            if (win && m.units["Ram"] > 0 && currentWallLvl > 0) {
-                const ramsSurviving = m.units["Ram"];
-                const levelsDestroyed = Math.floor(ramsSurviving / 20);
+            // --- RAM DESTRUCTION STAGE (After Battle) ---
+            // This permanently lowers the wall level in the database.
+            if (m.units["Ram"] > 0 && currentWallLvl > 0) {
+                // We use the ORIGINAL count of rams sent (startAtt["Ram"]) vs Surviving Rams
+                // Standard logic: Rams calculate damage based on the ratio of the fight.
+
+                // Simpler Logic: Surviving Rams do damage
+                // But to make it feel fair on loss, we can use a "Theoretical Survivor" count based on the ratio
+                // For now, let's stick to your "Survivor" logic but ensure it saves.
+
+                let effectiveRams = m.units["Ram"];
+
+                // OPTIONAL: Allow partial damage even on defeat?
+                // If defeat, m.units is 0. So walls never break on defeat with this logic.
+                // To fix that, we can calculate "Virtual Survivors" solely for wall damage:
+                if (!win) {
+                    const virtualRams = startAtt["Ram"] * (1 - lossFactor); // Rams that "would have" survived
+                    // Only apply if the fight was somewhat close (lossFactor < 0.9)
+                    if (lossFactor < 0.9) effectiveRams = Math.floor(virtualRams);
+                }
+
+                const levelsDestroyed = Math.floor(effectiveRams / 20); // 20 Rams = 1 Level
+
                 if (levelsDestroyed > 0) {
                     const newLvl = Math.max(0, currentWallLvl - levelsDestroyed);
+                    const levelsLost = currentWallLvl - newLvl;
+
+                    // PERMANENT CHANGE
                     target.buildings["Wall"] = newLvl;
-                    wallMsg = `<div style="color:#a00; font-weight:bold;">🚜 Wall damaged: ${currentWallLvl} ➔ ${newLvl}</div>`;
+
+                    // Recalculate points since building level dropped
+                    target.points = engine.calculatePoints(target);
+                    if (state.mapData[`${target.x},${target.y}`]) {
+                        state.mapData[`${target.x},${target.y}`].points = target.points;
+                    }
+
+                    wallMsg = `<div style="color:#a00; font-weight:bold;">🚜 ${T('wall_damaged')}: ${currentWallLvl} ➔ ${newLvl} (-${levelsLost})</div>`;
                 }
             }
 
