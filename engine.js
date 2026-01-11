@@ -86,6 +86,75 @@ const engine = {
         };
     },
 
+    // Add these inside your engine object:
+
+    getPopLimit: function (village) {
+        const farmLvl = village.buildings["Farm"] || 0;
+        if (farmLvl === 0) return 0;
+
+        // Tribal Wars Formula: 240 * (1.172103 ^ (Level - 1))
+        // You can adjust the base (240) and factor (1.17) if you want different balance
+        return Math.floor(240 * Math.pow(1.172103, farmLvl - 1));
+    },
+
+    getPopUsed: function (village) {
+        let used = 0;
+
+        // 1. Calculate Pop from Buildings
+        for (let bName in village.buildings) {
+            let level = village.buildings[bName];
+            if (level > 0 && DB.buildings[bName]) {
+                const b = DB.buildings[bName];
+                // Building Pop Formula: Base * (Factor ^ (Level - 1))
+                if (b.basePop > 0) {
+                    used += Math.round(b.basePop * Math.pow(b.factor, level - 1));
+                }
+            }
+        }
+
+        // 2. Calculate Pop from Units (Home)
+        for (let uName in village.units) {
+            if (village.units[uName] > 0 && DB.units[uName]) {
+                used += village.units[uName] * DB.units[uName].pop;
+            }
+        }
+
+        // 3. Calculate Pop from Queues (Troops being built reserve pop)
+        ['barracks', 'stable', 'workshop', 'academy'].forEach(qType => {
+            if (village.queues[qType]) {
+                village.queues[qType].forEach(item => {
+                    if (DB.units[item.unit]) {
+                        used += item.count * DB.units[item.unit].pop;
+                    }
+                });
+            }
+        });
+
+        // 4. Calculate Pop from Troops Outside (Attacking/Supporting others)
+        state.missions.forEach(m => {
+            if (m.originId === village.id) {
+                for (let u in m.units) {
+                    if (DB.units[u]) used += m.units[u] * DB.units[u].pop;
+                }
+            }
+        });
+
+        // 5. Calculate Pop from Troops Stationed Elsewhere (Support)
+        state.villages.forEach(v => {
+            if (v.stationed) {
+                v.stationed.forEach(s => {
+                    if (s.originId === village.id) {
+                        for (let u in s.units) {
+                            if (DB.units[u]) used += s.units[u] * DB.units[u].pop;
+                        }
+                    }
+                });
+            }
+        });
+
+        return used;
+    },
+
     getCurrentVillage: function () {
         return state.villages.find(v => v.id === state.selectedVillageId) || state.villages[0];
     },
@@ -241,45 +310,45 @@ const engine = {
             const processStandardQ = (type, action) => {
                 const q = v.queues[type];
                 if (q.length === 0) return;
-            
+
                 // 1. Initial Start (Cold Start)
                 // If the very first item has no finish time, start it now.
                 if (!q[0].finish) {
                     q[0].finish = now + q[0].duration;
                 }
-            
+
                 // 2. The "Catch Up" Loop
                 // We check repeatedly in case multiple items finished while offline.
                 while (q.length > 0 && now >= q[0].finish) {
-                    
+
                     const item = q[0];
                     const previousFinishTime = item.finish; // Save exactly when this finished
-                    
+
                     // Execute the Action
                     action(item);
-                    
+
                     // Remove from Queue
                     q.shift();
-            
+
                     // Update Points (if it was a building)
                     if (type === 'build') {
                         v.points = engine.calculatePoints(v);
                         if (state.mapData[`${v.x},${v.y}`]) state.mapData[`${v.x},${v.y}`].points = v.points;
                     }
-                    
+
                     // 3. Chain the Next Item
                     // The next item starts exactly when the previous one finished.
                     if (q.length > 0) {
                         // Set next item's finish time based on PREVIOUS item's finish time
                         q[0].finish = previousFinishTime + q[0].duration;
-            
+
                         // Optional: Ripple update the rest of the queue to keep timestamps clean
                         // (Ensures Item 3 knows Item 2's schedule changed)
                         for (let i = 1; i < q.length; i++) {
-                            q[i].finish = q[i-1].finish + q[i].duration;
+                            q[i].finish = q[i - 1].finish + q[i].duration;
                         }
                     }
-                    
+
                     // Triggers for every single completion
                     ui.refresh();
                     requestAutoSave();
@@ -878,7 +947,12 @@ const engine = {
             location.reload();
         }
     },
-    getStorage: function (v) { return Math.round(1000 * Math.pow(1.23, v.buildings["Warehouse"] - 1)); },
+    getStorage: function (village) {
+        const warehouseLvl = village.buildings["Warehouse"] || 0;
+        if (warehouseLvl === 0) return 0;
+        // Standard Formula: 1000 * (1.229493 ^ (Level - 1))
+        return Math.floor(1000 * Math.pow(1.229493, warehouseLvl - 1));
+    },
 
     spawnAiAttack: function () {
         // 1. Pick a target (Random player village)

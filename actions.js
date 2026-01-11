@@ -153,18 +153,74 @@ const game = {
         requestAutoSave();
     },
     moveMap: function (dx, dy) { state.mapView.x += dx; state.mapView.y += dy; ui.renderMap(); },
-    launchAttack: function (type = 'attack') {
-        const v = engine.getCurrentVillage(), t = ui.selTile;
-        let units = {}, hasTroops = false;
-        for (let u in v.units) { const val = parseInt(document.getElementById(`atk-${u}`)?.value || 0); if (val > 0) { units[u] = val; v.units[u] -= val; hasTroops = true; } }
-        if (!hasTroops) return;
-        const targetV = state.villages.find(vil => vil.id === t.id);
-        const dist = Math.sqrt(Math.pow(targetV.x - v.x, 2) + Math.pow(targetV.y - v.y, 2));
-        const dur = dist * (state.debugFastTravel ? 2 : 60);
-        state.missions.push({ originId: v.id, targetId: t.id, units: units, type: type, arrival: Date.now() + (dur * 1000) });
-        ui.closeAttackModal(); ui.refresh(); 
-        // CHANGED: Use soft save
-        requestAutoSave();
+    launchAttack: function (type) {
+        const origin = engine.getCurrentVillage();
+        const target = ui.selTile;
+        
+        if (!target) return;
+        if (origin.id === target.id) { alert(T('cant_attack_self')); return; }
+    
+        // 1. Gather Units & Find Slowest Speed
+        let unitsToSend = {};
+        let slowestSpeed = 0;
+        let totalCount = 0;
+    
+        for (let u in DB.units) {
+            const input = document.getElementById('atk-' + u);
+            if (input) {
+                const count = parseInt(input.value) || 0;
+                if (count > 0) {
+                    if (origin.units[u] < count) { alert(T('not_enough_troops')); return; }
+                    unitsToSend[u] = count;
+                    totalCount += count;
+                    
+                    // HIGHER number = SLOWER unit (minutes per tile)
+                    if (DB.units[u].spd > slowestSpeed) {
+                        slowestSpeed = DB.units[u].spd;
+                    }
+                }
+            }
+        }
+    
+        if (totalCount === 0) return;
+    
+        // 2. Calculate Distance (Pythagorean theorem)
+        const dx = Math.abs(origin.x - target.x);
+        const dy = Math.abs(origin.y - target.y);
+        const dist = Math.sqrt(dx * dx + dy * dy);
+    
+        // 3. Calculate Duration
+        // Duration (ms) = Distance * Speed (min/tile) * 60 * 1000
+        // We normally use milliseconds for game timing
+        const durationMs = dist * slowestSpeed * 6 * 1000;
+    
+        // 4. Create Mission
+        const m = {
+            id: Date.now() + Math.floor(Math.random() * 100000),
+            type: type,
+            originId: origin.id,
+            targetId: target.id,
+            units: unitsToSend,
+            startTime: Date.now(),
+            arrival: Date.now() + durationMs,
+            
+            // Optional: Store original resources if this is transport
+            resources: { wood: 0, clay: 0, iron: 0 } 
+        };
+    
+        // Remove units from village immediately
+        for (let u in unitsToSend) {
+            origin.units[u] -= unitsToSend[u];
+        }
+    
+        state.missions.push(m);
+        
+        // UI Feedback
+        ui.closeAttackModal();
+        ui.refresh();
+        ui.updateMissions();
+        
+        engine.requestAutoSave();
     },
     sendBackSupport: function (idx) {
         const v = engine.getCurrentVillage();

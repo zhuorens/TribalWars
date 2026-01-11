@@ -59,43 +59,29 @@ const ui = {
         const v = engine.getCurrentVillage();
         ui.renderHeader(v);
         ui.renderVillageInfo(v);
-
+    
         document.getElementById('village-points').innerText = v.points || 0;
         document.getElementById('res-wood').innerText = Math.floor(v.res[0]);
         document.getElementById('res-clay').innerText = Math.floor(v.res[1]);
         document.getElementById('res-iron').innerText = Math.floor(v.res[2]);
-
-        const popUsed = (function () {
-            let p = 0;
-            for (let b in v.buildings) p += DB.buildings[b].pop * v.buildings[b];
-            for (let u in v.units) p += DB.units[u].pop * v.units[u];
-            for (let k in v.queues) {
-                if (k === 'build' || k === 'research') continue;
-                v.queues[k].forEach(q => p += DB.units[q.unit].pop * q.count);
-            }
-            state.missions.filter(m => m.originId === v.id).forEach(m => { for (let u in m.units) p += DB.units[u].pop * m.units[u]; });
-            state.villages.forEach(vil => {
-                if (vil.stationed) {
-                    vil.stationed.forEach(s => {
-                        if (s.originId === v.id) {
-                            for (let u in s.units) p += DB.units[u].pop * s.units[u];
-                        }
-                    });
-                }
-            });
-            return p;
-        })();
-
-        const popMax = Math.floor(240 * Math.pow(1.17, v.buildings["Farm"]));
+    
+        // --- POPULATION UPDATE (Cleaned Up) ---
+        const popUsed = engine.getPopUsed(v);
+        const popMax = engine.getPopLimit(v);
+        
         const popElem = document.getElementById('pop-current');
         popElem.innerText = popUsed;
         document.getElementById('pop-max').innerText = popMax;
+        
+        // Red color if full
         popElem.style.color = popUsed >= popMax ? "red" : "inherit";
+        
+        // Storage
         document.getElementById('storage-max').innerText = engine.getStorage(v);
-
+    
         // --- Render All Queues ---
         let qHTML = "";
-
+    
         // Build Queue
         v.queues.build.forEach((item, idx) => {
             let rem;
@@ -109,7 +95,7 @@ const ui = {
             }
             qHTML += `<div class="q-item">🔨 <b>${T_Name(item.building)}</b> <span class="timer">${formatTime(rem)}</span> <button class="btn-x" onclick="game.cancel('build', ${idx})">❌</button></div>`;
         });
-
+    
         // Research Queue
         v.queues.research.forEach((item, idx) => {
             let rem;
@@ -121,39 +107,39 @@ const ui = {
             }
             qHTML += `<div class="q-item">🧪 <b>${T_Name(item.unit)}</b> <span class="timer">${formatTime(rem)}</span> <button class="btn-x" onclick="game.cancel('research', ${idx})">❌</button></div>`;
         });
-
+    
         // Unit Queues
         ['barracks', 'stable', 'workshop', 'academy'].forEach(qName => {
             if (v.queues[qName].length > 0) {
                 qHTML += `<div style="font-size:10px; font-weight:bold; color:#666; margin-top:2px; text-transform:uppercase;">${T_Name(qName.charAt(0).toUpperCase() + qName.slice(1))}</div>`;
-
+    
                 v.queues[qName].forEach((item, idx) => {
                     let totalRem = 0;
-
+    
                     if (idx === 0) {
                         // --- ACTIVE BATCH ---
                         // 1. Time remaining for the ONE unit currently being built
                         // If finish is not set yet (just added), assume full unitTime
                         const nextFinish = item.finish || (Date.now() + item.unitTime);
                         const timeForCurrent = Math.max(0, nextFinish - Date.now());
-
+    
                         // 2. Time for the remaining units in this stack
                         const timeForRest = Math.max(0, item.count - 1) * item.unitTime;
-
+    
                         totalRem = timeForCurrent + timeForRest;
                     } else {
                         // --- WAITING BATCH ---
                         // These haven't started, so duration is full count * time per unit
                         totalRem = item.count * item.unitTime;
                     }
-
+    
                     qHTML += `<div class="q-item">⚔️ <b>${T_Name(item.unit)}</b> (${item.count}) <span class="timer">${formatTime(totalRem)}</span> <button class="btn-x" onclick="game.cancel('${qName}', ${idx})">❌</button></div>`;
                 });
             }
         });
-
+    
         document.getElementById('queues-container').innerHTML = qHTML;
-
+    
         if (document.getElementById('hq').classList.contains('active')) ui.renderVillage();
         if (document.getElementById('recruit').classList.contains('active')) ui.renderRecruit();
         if (document.getElementById('map').classList.contains('active')) ui.renderMinimap();
@@ -257,24 +243,24 @@ const ui = {
         const v = engine.getCurrentVillage();
         const div = document.getElementById('unit-list');
         div.innerHTML = "";
-
+    
         const groups = { "Barracks": [], "Stable": [], "Workshop": [], "Academy": [] };
         for (let u in DB.units) {
             if (u === "Catapult" && !CONFIG.enableCatapults) continue;
             const b = DB.units[u].building || "Barracks";
             if (groups[b]) groups[b].push(u);
         }
-
+    
         for (let b in groups) {
             if (groups[b].length === 0) continue;
             const bLvl = v.buildings[b] || 0;
             const isLocked = bLvl === 0;
             const color = isLocked ? "red" : "#666";
-
+    
             div.innerHTML += `<div style="width:100%; font-weight:bold; margin-top:10px; border-bottom:1px solid #ccc;">
                 ${T_Name(b)} <span style="font-size:11px; color:${color}">(Lv ${bLvl})</span>
             </div>`;
-
+    
             groups[b].forEach(u => {
                 const d = DB.units[u];
                 const tech = (v.techs && v.techs[u]) ? v.techs[u] : 1;
@@ -282,27 +268,38 @@ const ui = {
                 const att = Math.floor(d.att * factor);
                 const def = Math.floor(d.def * factor);
                 const isBoosted = tech > 1 ? "color:green; font-weight:bold;" : "";
-
+    
+                // Logic for buttons (Farm check included from previous steps)
+                const popAvail = engine.getPopLimit(v) - engine.getPopUsed(v);
+                const hasSpace = popAvail >= d.pop;
+                
                 let btnHtml = "";
                 if (isLocked) {
                     btnHtml = `<button class="btn" style="width:100%; background:#ccc; color:#666; border:1px solid #999;" disabled>${T('requires')} ${T_Name(b)}</button>`;
+                } else if (!hasSpace) {
+                    btnHtml = `<button class="btn" style="width:100%; background:#faa; color:#900;" disabled>Farm Full</button>`;
                 } else {
                     btnHtml = `
                         <button class="btn" style="flex:1" onclick="game.recruit('${u}')">${T('recruit')}</button>
                         <button class="btn" style="width:40px;" onclick="game.recruitMax('${u}')">${T('max')}</button>
                     `;
                 }
-
+    
                 const cardStyle = isLocked ? "background:#eee; opacity:0.7;" : "";
-
+    
                 div.innerHTML += `
                 <div class="card" style="${cardStyle}">
-                    <h3>${T_Name(u)} <span style="font-size:11px; color:#444;">(Lv ${tech})</span> <span style="font-size:12px; float:right; color:#666">${T('troops')}: ${v.units[u]}</span></h3>
+                    <h3>
+                        ${T_Name(u)} 
+                        <span style="font-size:11px; color:#444;">(Lv ${tech})</span> 
+                        <span style="font-size:12px; float:right; color:#666">${T('troops')}: ${v.units[u]}</span>
+                    </h3>
                     <div class="unit-stats">
                         <span style="${isBoosted}">⚔️ ${att}</span>
                         <span style="${isBoosted}">🛡️ ${def}</span>
-                        <span>👥 ${d.pop}</span> <span>🎒 ${d.carry}</span>
-                    </div>
+                        <span>👥 ${d.pop}</span> 
+                        <span>🎒 ${d.carry}</span>
+                        <span>🏃 ${d.spd}</span> </div>
                     <div class="unit-cost">
                         🌲${d.cost[0]} 🧱${d.cost[1]} 🔩${d.cost[2]} | ⏳ ${formatTime(d.time * 1000)}
                     </div>
@@ -320,55 +317,105 @@ const ui = {
             const found = state.villages.find(v => v.id === t.id);
             if (found) target = found;
         }
-
+    
         ui.selTile = target;
         const v = engine.getCurrentVillage();
         const owner = target.owner || target.type;
         const isMyVillage = owner === 'player' && state.villages.some(vil => vil.id === target.id);
-
-        let html = "";
-        for (let u in v.units) {
-            if (v.units[u] > 0) {
+    
+        // 1. Build Unit Inputs with 'oninput' trigger
+        let html = `<div style="margin-bottom:10px; font-weight:bold; text-align:right;">
+                        ⏱️ ${T('duration')}: <span id="attack-duration">--:--:--</span>
+                    </div>`;
+        
+        // Sort units by speed (optional, but looks nice)
+        const unitKeys = Object.keys(v.units).filter(u => v.units[u] > 0);
+        
+        if (unitKeys.length === 0) {
+            html = T('noTroops');
+        } else {
+            unitKeys.forEach(u => {
                 html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
-                    <div style="width:80px;">${T_Name(u)} (${v.units[u]})</div>
+                    <div style="width:100px;">
+                        ${T_Name(u)} <span style="font-size:10px; color:#666">(${v.units[u]})</span><br>
+                        <span style="font-size:9px;">🏃 ${DB.units[u].spd}</span>
+                    </div>
                     <div class="input-group">
-                        <input type="number" id="atk-${u}" max="${v.units[u]}" value="0" style="width:50px">
-                        <button class="btn-mini" onclick="document.getElementById('atk-${u}').value = ${v.units[u]}">${T('max')}</button>
+                        <input type="number" id="atk-${u}" max="${v.units[u]}" value="0" style="width:50px" oninput="ui.updateTravelTime()">
+                        <button class="btn-mini" onclick="document.getElementById('atk-${u}').value = ${v.units[u]}; ui.updateTravelTime();">${T('max')}</button>
                     </div>
                 </div>`;
-            }
+            });
         }
-
+    
         const coords = (target.x !== undefined && target.y !== undefined) ? `(${target.x}|${target.y})` : "";
         const titleText = isMyVillage
             ? `${target.name} ${coords} - ${T('village')}`
             : `${T('target')}: ${target.name} ${coords}`;
-
+    
         document.getElementById('a-modal-title').innerText = titleText;
-        document.getElementById('a-modal-units').innerHTML = html || T('noTroops');
-
+        document.getElementById('a-modal-units').innerHTML = html;
+    
         const footer = document.querySelector('#attack-modal .modal-actions');
         const marketLvl = v.buildings["Market"] || 0;
         const resBtn = marketLvl > 0
             ? `<button class="btn btn-blue" onclick="ui.closeAttackModal(); ui.openMarketModal(${target.id})">💰 ${T('transport')}</button>`
             : '';
-
+    
+        // Button Logic
+        let buttons = `<button class="btn btn-red" onclick="ui.closeAttackModal()">${T('btn_cancel')}</button>`;
+        
         if (isMyVillage) {
-            footer.innerHTML = `
-                <button class="btn btn-red" onclick="ui.closeAttackModal()">${T('btn_cancel')}</button>
-                <button class="btn" onclick="ui.switchVillage(${target.id}); ui.closeAttackModal(); ui.showTab('hq', document.querySelector('.tab-btn'));">${T('village')}</button>
-                <button class="btn btn-blue" onclick="game.launchAttack('support')">🛡️ ${T('support')}</button>
-                ${resBtn}
-            `;
+            buttons += `<button class="btn" onclick="ui.switchVillage(${target.id}); ui.closeAttackModal(); ui.showTab('hq', document.querySelector('.tab-btn'));">${T('village')}</button>`;
         } else {
-            footer.innerHTML = `
-                <button class="btn btn-red" onclick="ui.closeAttackModal()">${T('btn_cancel')}</button>
-                <button class="btn" onclick="game.launchAttack('attack')">⚔️ ${T('attack')}</button>
-                <button class="btn btn-blue" onclick="game.launchAttack('support')">🛡️ ${T('support')}</button>
-                ${resBtn}
-            `;
+            buttons += `<button class="btn" onclick="game.launchAttack('attack')">⚔️ ${T('attack')}</button>`;
         }
+        
+        buttons += `<button class="btn btn-blue" onclick="game.launchAttack('support')">🛡️ ${T('support')}</button>`;
+        buttons += resBtn;
+    
+        footer.innerHTML = buttons;
         document.getElementById('attack-modal').style.display = 'flex';
+        
+        // Reset timer display
+        ui.updateTravelTime(); 
+    },
+    
+    // --- NEW HELPER: Update Time Display ---
+    updateTravelTime: function() {
+        const origin = engine.getCurrentVillage();
+        const target = ui.selTile;
+        if (!target) return;
+    
+        let slowestSpeed = 0;
+        let hasUnits = false;
+    
+        // Check all inputs
+        for (let u in DB.units) {
+            const el = document.getElementById('atk-' + u);
+            if (el) {
+                const count = parseInt(el.value) || 0;
+                if (count > 0) {
+                    hasUnits = true;
+                    if (DB.units[u].spd > slowestSpeed) slowestSpeed = DB.units[u].spd;
+                }
+            }
+        }
+    
+        const display = document.getElementById('attack-duration');
+        if (!hasUnits) {
+            display.innerText = "--:--:--";
+            return;
+        }
+    
+        // Calc Distance
+        const dx = Math.abs(origin.x - target.x);
+        const dy = Math.abs(origin.y - target.y);
+        const dist = Math.sqrt(dx * dx + dy * dy);
+    
+        // Calc Time
+        const ms = dist * slowestSpeed * 6 * 1000;
+        display.innerText = formatTime(ms);
     },
 
     openTroopsModal: function () {
@@ -489,8 +536,8 @@ const ui = {
                 if (curLvl >= maxLvl) {
                     html += `<div style="background:#eee; padding:5px; font-size:12px; border:1px solid #ccc; opacity:0.7"><b>${T_Name(u)}</b><br><span style="color:gold;">★ ${T('max')} (Lv${curLvl})</span></div>`;
                 } else {
-                    const rc = DB.units[u].cost.map(x => Math.floor(x * curLvl * 5));
-                    const baseTime = DB.units[u].time * 10;
+                    const rc = DB.units[u].cost.map(x => Math.floor(x * curLvl * 15));
+                    const baseTime = DB.units[u].time * 200;
                     const rTime = Math.floor(baseTime * Math.pow(0.9, v.buildings[bName]) * 1000);
                     html += `<div style="background:#eee; padding:5px; font-size:12px; border:1px solid #ccc;"><b>${T_Name(u)}</b><br>Next: Lv${nextLvl}<br>🌲${rc[0]} 🧱${rc[1]} 🔩${rc[2]}<br>⏳ ${formatTime(rTime)}<br><button class="btn" style="padding:2px 5px; font-size:10px; width:100%" onclick="game.research('${u}')">${T('upgrade')}</button></div>`;
                 }
