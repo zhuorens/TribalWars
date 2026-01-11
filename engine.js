@@ -240,26 +240,49 @@ const engine = {
             // These complete ONLY when the full duration is done
             const processStandardQ = (type, action) => {
                 const q = v.queues[type];
-                if (q.length > 0) {
+                if (q.length === 0) return;
+            
+                // 1. Initial Start (Cold Start)
+                // If the very first item has no finish time, start it now.
+                if (!q[0].finish) {
+                    q[0].finish = now + q[0].duration;
+                }
+            
+                // 2. The "Catch Up" Loop
+                // We check repeatedly in case multiple items finished while offline.
+                while (q.length > 0 && now >= q[0].finish) {
+                    
                     const item = q[0];
-                    if (!item.finish) item.finish = now + item.duration;
-
-                    if (now >= item.finish) {
-                        action(q.shift()); // Remove and execute
-
-                        // Trigger Updates
-                        if (type === 'build') {
-                            v.points = engine.calculatePoints(v);
-                            if (state.mapData[`${v.x},${v.y}`]) state.mapData[`${v.x},${v.y}`].points = v.points;
-                        }
-
-                        // Prepare next item
-                        if (q.length > 0) {
-                            q[0].finish = now + q[0].duration;
-                        }
-                        ui.refresh();
-                        requestAutoSave();
+                    const previousFinishTime = item.finish; // Save exactly when this finished
+                    
+                    // Execute the Action
+                    action(item);
+                    
+                    // Remove from Queue
+                    q.shift();
+            
+                    // Update Points (if it was a building)
+                    if (type === 'build') {
+                        v.points = engine.calculatePoints(v);
+                        if (state.mapData[`${v.x},${v.y}`]) state.mapData[`${v.x},${v.y}`].points = v.points;
                     }
+                    
+                    // 3. Chain the Next Item
+                    // The next item starts exactly when the previous one finished.
+                    if (q.length > 0) {
+                        // Set next item's finish time based on PREVIOUS item's finish time
+                        q[0].finish = previousFinishTime + q[0].duration;
+            
+                        // Optional: Ripple update the rest of the queue to keep timestamps clean
+                        // (Ensures Item 3 knows Item 2's schedule changed)
+                        for (let i = 1; i < q.length; i++) {
+                            q[i].finish = q[i-1].finish + q[i].duration;
+                        }
+                    }
+                    
+                    // Triggers for every single completion
+                    ui.refresh();
+                    requestAutoSave();
                 }
             };
 

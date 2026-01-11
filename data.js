@@ -1,19 +1,19 @@
 const DB = {
     buildings: {
-        "Headquarters": { base: [90, 80, 70], factor: 1.26, pop: 2, time: 90, points: 10, maxLevel: 30, desc: "减少建筑时间" },
-        "Timber Camp": { base: [50, 60, 40], factor: 1.25, pop: 1, time: 60, points: 1, maxLevel: 30, desc: "生产木材" },
-        "Clay Pit": { base: [65, 50, 40], factor: 1.25, pop: 2, time: 60, points: 1, maxLevel: 30, desc: "生产粘土" },
-        "Iron Mine": { base: [75, 65, 70], factor: 1.25, pop: 2, time: 60, points: 1, maxLevel: 30, desc: "生产铁矿" },
+        "Headquarters": { base: [90, 80, 70], factor: 1.26, pop: 5, time: 90, points: 10, maxLevel: 30, desc: "减少建筑时间" },
+        "Timber Camp": { base: [50, 60, 40], factor: 1.25, pop: 2, time: 60, points: 1, maxLevel: 30, desc: "生产木材" },
+        "Clay Pit": { base: [65, 50, 40], factor: 1.25, pop: 4, time: 60, points: 1, maxLevel: 30, desc: "生产粘土" },
+        "Iron Mine": { base: [75, 65, 70], factor: 1.25, pop: 4, time: 60, points: 1, maxLevel: 30, desc: "生产铁矿" },
         "Farm": { base: [45, 40, 30], factor: 1.30, pop: 0, time: 120, points: 5, maxLevel: 30, desc: "增加人口上限" },
         "Warehouse": { base: [60, 50, 40], factor: 1.27, pop: 0, time: 100, points: 5, maxLevel: 30, desc: "增加资源存储上限" },
 
-        "Barracks": { base: [200, 170, 90], factor: 1.26, pop: 2, time: 300, points: 10, maxLevel: 25, desc: "训练步兵" },
-        "Stable": { base: [270, 240, 260], factor: 1.26, pop: 4, time: 600, points: 15, maxLevel: 20, desc: "训练骑兵" },
-        "Workshop": { base: [300, 240, 260], factor: 1.26, pop: 3, time: 600, points: 15, maxLevel: 15, desc: "训练攻城器械" },
-        "Smithy": { base: [220, 180, 240], factor: 1.26, pop: 2, time: 400, points: 20, maxLevel: 20, desc: "研究单位科技" },
+        "Barracks": { base: [200, 170, 90], factor: 1.26, pop: 4, time: 300, points: 10, maxLevel: 25, desc: "训练步兵" },
+        "Stable": { base: [270, 240, 260], factor: 1.26, pop: 6, time: 600, points: 15, maxLevel: 20, desc: "训练骑兵" },
+        "Workshop": { base: [300, 240, 260], factor: 1.26, pop: 5, time: 600, points: 15, maxLevel: 15, desc: "训练攻城器械" },
+        "Smithy": { base: [220, 180, 240], factor: 1.26, pop: 4, time: 400, points: 20, maxLevel: 20, desc: "研究单位科技" },
 
-        "Academy": { base: [15000, 25000, 10000], factor: 2.0, pop: 10, time: 3600, points: 512, maxLevel: 3, desc: "培养贵族" },
-        "Wall": { base: [50, 100, 20], factor: 1.28, pop: 1, time: 180, points: 8, maxLevel: 20, desc: "提升村庄防御" },
+        "Academy": { base: [15000, 25000, 10000], factor: 2.0, pop: 15, time: 3600, points: 512, maxLevel: 3, desc: "培养贵族" },
+        "Wall": { base: [50, 100, 20], factor: 1.28, pop: 2, time: 180, points: 8, maxLevel: 20, desc: "提升村庄防御" },
         "Market": {
             base: [100, 100, 100],
             factor: 1.2,
