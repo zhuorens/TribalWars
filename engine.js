@@ -549,7 +549,7 @@ const engine = {
     
         let win = false; 
         let scoutWin = false; 
-        let lootText = "", loyaltyMsg = "", wallMsg = "", scoutInfo = "";
+        let lootText = "", loyaltyMsg = "", wallMsg = "";
         let seeRes = false, seeBuild = false, seeOutside = false;
     
         // ===============================================
@@ -578,12 +578,6 @@ const engine = {
                 if (survRatio > 0.70 && scoutLevel >= 2) seeBuild = true;
                 if (survRatio > 0.90 && scoutLevel >= 3) seeOutside = true;
             }
-    
-            const resultColor = survivors === 0 ? "red" : (survivors === startAtt["Scout"] ? "green" : "orange");
-            scoutInfo = `<div style="border:1px solid #ccc; background:#eee; padding:5px; margin-bottom:5px;">
-                <h4>🕵️ Result</h4>
-                <div>Sent: ${attScouts} | Died: <span style="color:red">${scoutsDied}</span> | Survivors: <span style="color:${resultColor}">${survivors}</span></div>
-            </div>`;
         }
     
         // ===============================================
@@ -819,7 +813,6 @@ const engine = {
         report.content = `
             ${headerHTML}
             <h3 style='color:${color}'>${resultText}</h3>
-            ${scoutInfo}
             ${loyaltyMsg}
             ${wallMsg}
             <div style="display:flex; gap:5px; margin-top:5px;">
