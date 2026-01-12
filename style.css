@@ -40,7 +40,6 @@ body { font-family: 'Segoe UI', sans-serif; background-color: #3b2e2a; color: #3
     gap: 1px;
     background-color: #333;
     border: 2px solid #5d4037;
-    margin: 5px 0;
 }
 
 .tile {
@@ -57,6 +56,7 @@ body { font-family: 'Segoe UI', sans-serif; background-color: #3b2e2a; color: #3
     font-size: 10px;
     text-align: center;
     line-height: 1;
+    border: 2px solid #8d6e63;
 }
 
 /* Adjust the village name font size for smaller tiles */
@@ -106,7 +106,7 @@ body { font-family: 'Segoe UI', sans-serif; background-color: #3b2e2a; color: #3
 .tile.player { background: #42a5f5; } .tile.barb { background: #bdbdbd; } .tile.enemy { background: #ef5350; }
 
 /* UI ELEMENTS */
-.btn { background: #689f38; color: white; border: 1px solid #33691e; padding: 6px 12px; cursor: pointer; border-radius: 3px; }
+.btn { background: #689f38; color: white; border: 1px solid #33691e; cursor: pointer; border-radius: 3px; }
 .btn:disabled { background: #999; cursor: not-allowed; }
 .btn-red { background: #d32f2f; } .btn-blue { background: #1976d2; }
 .unit-grid { 

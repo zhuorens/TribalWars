@@ -974,7 +974,7 @@ const engine = {
         // Simple formula: 1 Axe per 10 points of the target village * Strength Config
         const armySize = Math.max(10, Math.floor((target.points / 10) * CONFIG.aiAttackStrength));
 
-        const units = { "Axe": armySize, "Light Cav": Math.floor(armySize / 3) };
+        const units = { "Axe": Math.floor(this.rand(armySize * 0.9, armySize * 1.1)), "Light Cav": Math.floor(this.rand(armySize * 0.9, armySize * 1.1) / 3) };
         if (Math.random() > 0.5) units["Ram"] = Math.floor(armySize / 10);
 
         // 4. Launch Mission

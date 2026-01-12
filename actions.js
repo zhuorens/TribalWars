@@ -220,7 +220,7 @@ const game = {
         ui.refresh();
         ui.updateMissions();
         
-        engine.requestAutoSave();
+        requestAutoSave();
     },
     sendBackSupport: function (idx) {
         const v = engine.getCurrentVillage();
