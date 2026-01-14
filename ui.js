@@ -347,6 +347,31 @@ const ui = {
                 </div>`;
             });
         }
+
+        if (state.reports) {
+            const recent = state.reports.filter(r => 
+                r.targetId === target.id && 
+                r.missionType === 'attack'
+            ).slice(0, 5); // Show max 5
+    
+            if (recent.length > 0) {
+                html += `<div style="margin-top:15px; padding-top:10px; border-top:1px solid #ddd;">
+                    <div style="font-size:11px; font-weight:bold; color:#555; margin-bottom:5px;">📋 ${T('recent_reports') || "Recent Attacks"}</div>
+                    <table style="width:100%; font-size:10px; border-collapse:collapse;">`;
+                
+                recent.forEach(r => {
+                    // Dot Color: Green = Win, Red = Loss
+                    const dot = r.type === 'win' ? '🟢' : '🔴';
+                    html += `
+                    <tr style="border-bottom:1px solid #eee;">
+                        <td style="padding:2px 5px;">${dot}</td>
+                        <td style="padding:2px;">${r.title}</td>
+                        <td style="padding:2px; text-align:right; color:#888;">${r.time}</td>
+                    </tr>`;
+                });
+                html += `</table></div>`;
+            }
+        }
     
         const coords = (target.x !== undefined && target.y !== undefined) ? `(${target.x}|${target.y})` : "";
         const titleText = isMyVillage

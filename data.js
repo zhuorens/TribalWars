@@ -120,7 +120,7 @@ const DB = {
     },
     units: {
         // Added 'building' property
-        "Spear": { cost: [50, 30, 10], pop: 1, att: 10, def: 20, spd: 18, carry: 25, time: 20, maxLevel: 3, building: "Barracks" },
+        "Spear": { cost: [50, 30, 10], pop: 1, att: 10, def: 25, spd: 18, carry: 25, time: 20, maxLevel: 3, building: "Barracks" },
         "Sword": { cost: [30, 30, 70], pop: 1, att: 25, def: 30, spd: 22, carry: 15, time: 25, maxLevel: 3, building: "Barracks" },
         "Axe": { cost: [60, 30, 40], pop: 1, att: 40, def: 10, spd: 18, carry: 10, time: 22, maxLevel: 3, building: "Barracks" },
         "Scout": { cost: [50, 50, 20], pop: 2, att: 0, def: 2, spd: 9, carry: 0, time: 30, maxLevel: 3, building: "Stable" },

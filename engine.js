@@ -418,15 +418,30 @@ const engine = {
                     if (Math.random() < CONFIG.aiGrowthChance) {
                         const bKeys = Object.keys(v.buildings);
                         const randBuild = bKeys[Math.floor(Math.random() * bKeys.length)];
-                        if (v.buildings[randBuild] < 30) {
+
+                        // Get the specific max level for this building from the Database
+                        const buildingDef = DB.buildings[randBuild];
+                        const maxLvl = buildingDef ? buildingDef.maxLevel : 30; // Default to 30 if missing
+
+                        if (v.buildings[randBuild] < maxLvl) {
                             v.buildings[randBuild]++;
                             v.points = engine.calculatePoints(v);
                             if (state.mapData[`${v.x},${v.y}`]) state.mapData[`${v.x},${v.y}`].points = v.points;
                         }
                     }
                     if (v.owner === 'enemy' && Math.random() < 0.3) {
-                        v.units["Spear"] = (v.units["Spear"] || 0) + 10;
-                        v.units["Sword"] = (v.units["Sword"] || 0) + 10;
+                        const MAX_AI_UNITS = v.points / 4;
+
+                        const currentSpear = v.units["Spear"] || 0;
+                        const currentSword = v.units["Sword"] || 0;
+
+                        if (currentSpear < MAX_AI_UNITS) {
+                            v.units["Spear"] = currentSpear + 10;
+                        }
+
+                        if (currentSword < MAX_AI_UNITS) {
+                            v.units["Sword"] = currentSword + 10;
+                        }
                     }
                 }
             });
@@ -456,45 +471,45 @@ const engine = {
     resolveMission: function (m) {
         const origin = state.villages.find(v => v.id === m.originId);
         const target = state.villages.find(v => v.id === m.targetId);
-        
+
         // Helper: Consistent Name Formatting
         const formatName = (v) => v ? `${v.name} (${v.x}|${v.y})` : T('targetVanished');
         const originName = formatName(origin);
         const targetName = formatName(target);
-    
+
         // --- TRANSPORT ---
         if (m.type === 'transport') {
             if (target && m.resources) {
                 target.res[0] += m.resources.wood || 0;
                 target.res[1] += m.resources.clay || 0;
                 target.res[2] += m.resources.iron || 0;
-                
+
                 if (target.owner === 'player') {
-                    state.reports.unshift({ 
-                        title: `💰 Market: ${originName} ➔ ${targetName}`, 
-                        time: new Date().toLocaleTimeString(), 
-                        type: 'neutral', 
-                        content: `<b>${T('from')}:</b> ${originName}<br><b>${T('to')}:</b> ${targetName}<hr>Received: 🌲${m.resources.wood} 🧱${m.resources.clay} 🔩${m.resources.iron}` 
+                    state.reports.unshift({
+                        title: `💰 Market: ${originName} ➔ ${targetName}`,
+                        time: new Date().toLocaleTimeString(),
+                        type: 'neutral',
+                        content: `<b>${T('from')}:</b> ${originName}<br><b>${T('to')}:</b> ${targetName}<hr>Received: 🌲${m.resources.wood} 🧱${m.resources.clay} 🔩${m.resources.iron}`
                     });
                 }
             }
             if (origin && origin.owner === 'player') {
-                state.reports.unshift({ 
-                    title: `💰 Market: ${originName} ➔ ${targetName}`, 
-                    time: new Date().toLocaleTimeString(), 
-                    type: 'neutral', 
-                    content: `<b>${T('from')}:</b> ${originName}<br><b>${T('to')}:</b> ${targetName}<hr>Delivered: 🌲${m.resources.wood} 🧱${m.resources.clay} 🔩${m.resources.iron}` 
+                state.reports.unshift({
+                    title: `💰 Market: ${originName} ➔ ${targetName}`,
+                    time: new Date().toLocaleTimeString(),
+                    type: 'neutral',
+                    content: `<b>${T('from')}:</b> ${originName}<br><b>${T('to')}:</b> ${targetName}<hr>Delivered: 🌲${m.resources.wood} 🧱${m.resources.clay} 🔩${m.resources.iron}`
                 });
             }
             if (state.reports.length > CONFIG.maxReports) state.reports = state.reports.slice(0, CONFIG.maxReports);
             ui.renderReports();
             return;
         }
-    
+
         // --- SUPPORT / RETURN ---
         if (m.type === 'support' || m.type === 'return') {
             if (!target) return;
-    
+
             if (m.type === 'return') {
                 for (let u in m.units) target.units[u] = (target.units[u] || 0) + m.units[u];
             } else {
@@ -506,32 +521,32 @@ const engine = {
                 }
                 for (let u in m.units) stack.units[u] = (stack.units[u] || 0) + m.units[u];
             }
-    
+
             if (m.originId === state.selectedVillageId || m.targetId === state.selectedVillageId) {
                 const icon = m.type === 'return' ? "🔙" : "🛡️";
                 const title = `${icon} ${originName} ➔ ${targetName}`;
                 const msg = m.type === 'return' ? T('troops_returned') : T('troops_arrived');
-    
-                state.reports.unshift({ 
-                    title: title, 
-                    time: new Date().toLocaleTimeString(), 
-                    type: 'neutral', 
-                    content: `<b>${T('from')}:</b> ${originName}<br><b>${T('to')}:</b> ${targetName}<hr>${msg}` 
+
+                state.reports.unshift({
+                    title: title,
+                    time: new Date().toLocaleTimeString(),
+                    type: 'neutral',
+                    content: `<b>${T('from')}:</b> ${originName}<br><b>${T('to')}:</b> ${targetName}<hr>${msg}`
                 });
-                
+
                 if (state.reports.length > CONFIG.maxReports) state.reports = state.reports.slice(0, CONFIG.maxReports);
                 ui.renderReports();
             }
             return;
         }
-    
+
         // --- BATTLE RESOLUTION ---
-        
+
         let report = { title: `⚔️ ${originName} ➔ ${targetName}`, time: new Date().toLocaleTimeString(), type: 'neutral', content: '' };
         if (!target) { report.content = T('targetVanished'); state.reports.unshift(report); return; }
-    
+
         const startAtt = { ...m.units };
-        
+
         // Aggregate Defender Units
         const defTotal = { ...target.units };
         if (target.stationed) {
@@ -540,24 +555,24 @@ const engine = {
             });
         }
         const startDef = { ...defTotal };
-    
+
         // Initialize Flags
         const attScouts = m.units["Scout"] || 0;
         const defScouts = defTotal["Scout"] || 0;
         const otherAttackingUnits = Object.keys(m.units).some(u => u !== "Scout" && m.units[u] > 0);
-        const isDefender = target.owner === 'player'; 
-    
-        let win = false; 
-        let scoutWin = false; 
+        const isDefender = target.owner === 'player';
+
+        let win = false;
+        let scoutWin = false;
         let lootText = "", loyaltyMsg = "", wallMsg = "";
         let seeRes = false, seeBuild = false, seeOutside = false;
-    
+
         // ===============================================
         // PHASE 1: SCOUT RESOLUTION
         // ===============================================
         if (attScouts > 0) {
             let scoutsDied = 0;
-    
+
             // Only defender scouts kill attacker scouts
             if (defScouts >= attScouts * 2) {
                 scoutsDied = attScouts;
@@ -565,30 +580,30 @@ const engine = {
                 const ratio = Math.pow(defScouts / (attScouts * 2), 1.5);
                 scoutsDied = Math.floor(attScouts * ratio);
             }
-            
+
             m.units["Scout"] -= scoutsDied;
             const survivors = m.units["Scout"];
-            
+
             if (survivors > 0) {
-                scoutWin = true; 
+                scoutWin = true;
                 const scoutLevel = (origin && origin.techs) ? (origin.techs["Scout"] || 1) : 1;
                 const survRatio = survivors / startAtt["Scout"];
-                
+
                 if (survRatio > 0.50 && scoutLevel >= 1) seeRes = true;
                 if (survRatio > 0.70 && scoutLevel >= 2) seeBuild = true;
                 if (survRatio > 0.90 && scoutLevel >= 3) seeOutside = true;
             }
         }
-    
+
         // ===============================================
         // PHASE 2: MAIN COMBAT
         // ===============================================
         if (otherAttackingUnits) {
             let off = 0, def = 0;
-    
+
             // Calculate Offense (Skip Scouts)
             for (let u in m.units) {
-                if(u !== "Scout") {
+                if (u !== "Scout") {
                     off += m.units[u] * DB.units[u].att * getTechMultiplier(origin?.techs?.[u] || 1);
                 }
             }
@@ -596,82 +611,82 @@ const engine = {
             for (let u in defTotal) {
                 def += defTotal[u] * DB.units[u].def * getTechMultiplier(target.techs?.[u] || 1);
             }
-    
+
             const currentWallLvl = target.buildings["Wall"] || 0;
             let effectiveWallLvl = currentWallLvl;
-            
+
             // Ram Logic (Tactical)
             if (m.units["Ram"] > 0) {
                 const bonusReduction = Math.floor(m.units["Ram"] / 20);
                 effectiveWallLvl = Math.max(0, currentWallLvl - bonusReduction);
             }
-    
+
             // Wall Bonus
-            const wallBonus = 1 + (effectiveWallLvl * 0.05); 
+            const wallBonus = 1 + (effectiveWallLvl * 0.05);
             def *= wallBonus;
-            def += (effectiveWallLvl * 20); 
-    
+            def += (effectiveWallLvl * 20);
+
             win = off > def;
-    
+
             const ratio = (off === 0 && def === 0) ? 1 : (win ? (def / off) : (off / def));
             const lossFactor = (off === 0 && def === 0) ? 0 : Math.pow(ratio, 1.5);
-    
+
             // Apply Losses to Attacker (Skip Scouts)
             if (win) {
                 for (let u in m.units) {
-                    if(u !== "Scout") m.units[u] -= Math.floor(m.units[u] * lossFactor);
+                    if (u !== "Scout") m.units[u] -= Math.floor(m.units[u] * lossFactor);
                 }
             } else {
                 for (let u in m.units) {
-                    if(u !== "Scout") m.units[u] = 0;
+                    if (u !== "Scout") m.units[u] = 0;
                 }
             }
-    
+
             // Apply Losses to Defender (Skip Scouts)
             const defLossFactor = win ? 1 : lossFactor;
-            const killDef = (obj) => { 
+            const killDef = (obj) => {
                 for (let u in obj) {
-                    obj[u] = Math.max(0, obj[u] - Math.floor(obj[u] * defLossFactor)); 
+                    obj[u] = Math.max(0, obj[u] - Math.floor(obj[u] * defLossFactor));
                 }
             };
             killDef(target.units);
             if (target.stationed) target.stationed.forEach(s => killDef(s.units));
-    
+
             // Ram Destruction (Permanent)
             if (m.units["Ram"] > 0 && currentWallLvl > 0) {
                 let effectiveRams = m.units["Ram"];
                 // If lost but close fight, use virtual rams for damage calc
                 if (!win && lossFactor < 0.9) {
-                     const virtualRams = startAtt["Ram"] * (1 - lossFactor);
-                     effectiveRams = Math.floor(virtualRams);
+                    const virtualRams = startAtt["Ram"] * (1 - lossFactor);
+                    effectiveRams = Math.floor(virtualRams);
                 }
-    
+
                 const levelsDestroyed = Math.floor(effectiveRams / 20);
                 if (levelsDestroyed > 0) {
                     const newLvl = Math.max(0, currentWallLvl - levelsDestroyed);
                     const lost = currentWallLvl - newLvl;
                     target.buildings["Wall"] = newLvl;
-                    
+
                     // Update Points
                     target.points = engine.calculatePoints(target);
                     if (state.mapData[`${target.x},${target.y}`]) state.mapData[`${target.x},${target.y}`].points = target.points;
-    
+
                     wallMsg = `<div style="color:#a00; font-weight:bold;">🚜 ${T('wall_damaged')}: ${currentWallLvl} ➔ ${newLvl} (-${lost})</div>`;
                 }
             }
-    
+
             // Noble Logic
             if (win && m.units["Noble"] > 0) {
                 const nobleCount = m.units["Noble"];
                 let totalDrop = 0;
-                for(let i=0; i<nobleCount; i++) totalDrop += Math.floor(20 + Math.random() * 16);
-                
+                for (let i = 0; i < nobleCount; i++) totalDrop += Math.floor(20 + Math.random() * 16);
+
                 target.loyalty -= totalDrop;
                 loyaltyMsg = `<div style="color:blue"><b>${T('loyalty')} ${Math.floor(target.loyalty)}!</b> (-${totalDrop})</div>`;
-    
+
                 if (target.loyalty <= 0) {
-                    target.owner = "player"; 
-                    target.loyalty = 25; 
+                    target.owner = "player";
+                    target.loyalty = 25;
                     state.mapData[`${target.x},${target.y}`].type = "player";
                     m.units["Noble"] = Math.max(0, m.units["Noble"] - 1);
                     loyaltyMsg += `<div style="background:gold; color:black; padding:5px; text-align:center; margin-top:5px;"><b>🎉 ${T('conquered')} 🎉</b></div>`;
@@ -682,27 +697,27 @@ const engine = {
             // Pure scout mission: Result depends on scout survival
             win = scoutWin;
         }
-    
+
         // ===============================================
         // PHASE 3: LOOT
         // ===============================================
         if (win || scoutWin) {
             let capacity = 0;
             for (let u in m.units) capacity += m.units[u] * DB.units[u].carry;
-            
+
             let stolen = [0, 0, 0];
-            
+
             while (capacity > 0) {
                 let availableIndices = [];
                 if (target.res[0] > 0) availableIndices.push(0);
                 if (target.res[1] > 0) availableIndices.push(1);
                 if (target.res[2] > 0) availableIndices.push(2);
-    
+
                 if (availableIndices.length === 0) break;
-    
+
                 let share = Math.floor(capacity / availableIndices.length);
                 if (share === 0) share = 1;
-    
+
                 let takenThisRound = 0;
                 availableIndices.forEach(i => {
                     if (capacity <= 0) return;
@@ -714,26 +729,26 @@ const engine = {
                 });
                 if (takenThisRound === 0) break;
             }
-            
+
             if (stolen[0] + stolen[1] + stolen[2] > 0) {
                 lootText = `<hr>💰 ${T('loot')}: 🌲${stolen[0]} 🧱${stolen[1]} 🔩${stolen[2]}`;
-                if (origin) { 
-                    origin.res[0] += stolen[0]; 
-                    origin.res[1] += stolen[1]; 
-                    origin.res[2] += stolen[2]; 
+                if (origin) {
+                    origin.res[0] += stolen[0];
+                    origin.res[1] += stolen[1];
+                    origin.res[2] += stolen[2];
                 }
             }
         }
-    
+
         if (origin) {
             for (let u in m.units) origin.units[u] += m.units[u];
         }
-    
+
         // --- REPORT GENERATION ---
         const playerSuccess = isDefender ? !win : win;
         const color = playerSuccess ? "green" : "red";
         const resultText = playerSuccess ? T('victory') : T('defeat');
-    
+
         // Attacker Table
         let attTable = `<table style="width:100%; font-size:10px;"><tr><th>Unit</th><th>Sent</th><th>Lost</th></tr>`;
         for (let u in DB.units) {
@@ -743,7 +758,7 @@ const engine = {
             }
         }
         attTable += "</table>";
-    
+
         // Defender Table
         let defTable = "";
         // Only show full defender info if you won, OR scouts succeeded, OR you are the defender
@@ -762,7 +777,7 @@ const engine = {
         } else {
             defTable = "<div style='color:#999; padding:5px;'>???</div>";
         }
-    
+
         // Intel
         let intelHTML = "";
         if (scoutWin && (seeRes || seeBuild)) {
@@ -770,46 +785,50 @@ const engine = {
             if (seeBuild) {
                 intelHTML += `<div style="font-size:11px; margin-top:5px;"><b>Buildings:</b> `;
                 let bStr = [];
-                for(let b in target.buildings) if(target.buildings[b]>0) bStr.push(`${T_Name(b)} ${target.buildings[b]}`);
+                for (let b in target.buildings) if (target.buildings[b] > 0) bStr.push(`${T_Name(b)} ${target.buildings[b]}`);
                 intelHTML += bStr.join(", ") + "</div>";
             }
         }
         if (scoutWin && seeOutside) {
-                let outsideCount = {};
-                let foundOutside = false;
-                state.missions.forEach(mis => {
-                    if (mis.originId === target.id) {
-                        for (let u in mis.units) { outsideCount[u] = (outsideCount[u] || 0) + mis.units[u]; foundOutside = true; }
-                    }
-                });
-                state.villages.forEach(vil => {
-                    if (vil.stationed) {
-                        vil.stationed.forEach(s => {
-                            if (s.originId === target.id) {
-                                for (let u in s.units) { outsideCount[u] = (outsideCount[u] || 0) + s.units[u]; foundOutside = true; }
-                            }
-                        });
-                    }
-                });
-                intelHTML += `<div style="font-size:11px; margin-top:5px; border-top:1px solid #ccc;"><b>Outside:</b> `;
-                if (foundOutside) {
-                    let uStr = [];
-                    for (let u in outsideCount) uStr.push(`${T_Name(u)} ${outsideCount[u]}`);
-                    intelHTML += uStr.join(", ");
-                } else {
-                    intelHTML += "None";
+            let outsideCount = {};
+            let foundOutside = false;
+            state.missions.forEach(mis => {
+                if (mis.originId === target.id) {
+                    for (let u in mis.units) { outsideCount[u] = (outsideCount[u] || 0) + mis.units[u]; foundOutside = true; }
                 }
-                intelHTML += "</div>";
+            });
+            state.villages.forEach(vil => {
+                if (vil.stationed) {
+                    vil.stationed.forEach(s => {
+                        if (s.originId === target.id) {
+                            for (let u in s.units) { outsideCount[u] = (outsideCount[u] || 0) + s.units[u]; foundOutside = true; }
+                        }
+                    });
+                }
+            });
+            intelHTML += `<div style="font-size:11px; margin-top:5px; border-top:1px solid #ccc;"><b>Outside:</b> `;
+            if (foundOutside) {
+                let uStr = [];
+                for (let u in outsideCount) uStr.push(`${T_Name(u)} ${outsideCount[u]}`);
+                intelHTML += uStr.join(", ");
+            } else {
+                intelHTML += "None";
+            }
+            intelHTML += "</div>";
         }
-    
+
         const headerHTML = `
             <div style="font-size:11px; margin-bottom:5px; padding-bottom:5px; border-bottom:1px solid #eee;">
                 <div><b>${T('att')}:</b> ${originName}</div>
                 <div><b>${T('def')}:</b> ${targetName}</div>
             </div>
         `;
-    
+
         report.type = playerSuccess ? 'win' : 'loss';
+        report.originId = m.originId;
+        report.targetId = m.targetId;
+        report.missionType = m.type; // 'attack', 'support', etc.
+        report.timestamp = Date.now();
         report.content = `
             ${headerHTML}
             <h3 style='color:${color}'>${resultText}</h3>
@@ -822,12 +841,12 @@ const engine = {
             ${intelHTML}
             ${lootText}
         `;
-    
+
         state.reports.unshift(report);
         if (state.reports.length > CONFIG.maxReports) state.reports = state.reports.slice(0, CONFIG.maxReports);
-        
+
         ui.renderReports();
-        requestAutoSave(); 
+        requestAutoSave();
     },
 
     // --- SAVE FUNCTION (Hard Save) ---
