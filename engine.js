@@ -542,7 +542,7 @@ const engine = {
 
         // --- BATTLE RESOLUTION ---
 
-        let report = { title: `⚔️ ${originName} ➔ ${targetName}`, time: new Date().toLocaleTimeString(), type: 'neutral', content: '' };
+        let report = { title: `⚔️ ${originName} ➔ ${targetName}`, time: new Date().toLocaleDateString() + " " + new Date().toLocaleTimeString(), type: 'neutral', content: '' };
         if (!target) { report.content = T('targetVanished'); state.reports.unshift(report); return; }
 
         const startAtt = { ...m.units };
