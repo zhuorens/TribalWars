@@ -107,7 +107,7 @@ const engine = {
                 const b = DB.buildings[bName];
                 // Building Pop Formula: Base * (Factor ^ (Level - 1))
                 if (b.basePop > 0) {
-                    used += Math.round(b.basePop * Math.pow(b.factor, level - 1));
+                    used += Math.round(b.basePop * Math.pow((b.factor - 1) * 3 / 4 + 1, level - 1));
                 }
             }
         }
