@@ -194,7 +194,7 @@ const ui = {
             const home = v.units[u] || 0;
             let outside = 0;
             state.missions.forEach(m => {
-                if (m.originId === v.id && m.units[u]) outside += m.units[u];
+                if (m.originId === v.id && m.units && m.units[u]) outside += m.units[u];
             });
             state.villages.forEach(vil => {
                 if (vil.stationed) {
@@ -418,6 +418,10 @@ const ui = {
 
     // --- NEW HELPER: Update Time Display ---
     updateTravelTime: function () {
+        const display = document.getElementById('attack-duration');
+        
+        if (!display) return;
+
         const origin = engine.getCurrentVillage();
         const target = ui.selTile;
         if (!target) return;
@@ -437,7 +441,6 @@ const ui = {
             }
         }
 
-        const display = document.getElementById('attack-duration');
         if (!hasUnits) {
             display.innerText = "--:--:--";
             return;
@@ -507,7 +510,7 @@ const ui = {
             playerVillages.forEach(pv => {
                 const opt = document.createElement('option');
                 opt.value = pv.id;
-                opt.innerText = `${pv.name} (${pv.x}|${pv.y})`;
+                opt.innerText = `${pv.name} (${pv.x}|${pv.y}) ${pv.points}`;
                 select.appendChild(opt);
             });
         }
@@ -848,51 +851,104 @@ const ui = {
         };
     },
 
-    updateMissions: function () {
-        const el = document.getElementById('active-missions');
-        if (!el) return;
-        const sortedMissions = [...state.missions].sort((a, b) => a.arrival - b.arrival);
-        el.innerHTML = sortedMissions.map(m => {
-            const ms = Math.max(0, m.arrival - Date.now());
-            const timeStr = formatTime(ms);
-            const getV = (id) => state.villages.find(v => v.id === id);
-            const originV = getV(m.originId);
-            const targetV = getV(m.targetId);
-            const originName = originV ? `${originV.name} (${originV.x}|${originV.y})` : "Unknown";
-            const targetName = targetV ? `${targetV.name} (${targetV.x}|${targetV.y})` : "Unknown";
+updateMissions: function () {
+    const el = document.getElementById('active-missions');
+    if (!el) return;
 
-            let text = "", colorClass = "", icon = "";
+    const v = engine.getCurrentVillage();
+    if (!v) return;
 
-            if (m.type === 'attack') {
-                const myVillages = state.villages.filter(v => v.owner === 'player').map(v => v.id);
-                if (myVillages.includes(m.targetId)) {
-                    text = `<b>${T('incoming')}</b> ${T('from')} <br>${originName} <br>➔ ${targetName}`;
-                    colorClass = "mission-incoming"; icon = "🚨";
-                } else {
-                    text = `${T('attack')} -> ${targetName}`;
-                    colorClass = "mission-attack"; icon = "⚔️";
-                }
-            } else if (m.type === 'support') {
-                text = `${T('support')} ➔ ${targetName}`;
-                colorClass = "mission-support"; icon = "🛡️";
-            } else if (m.type === 'transport') {
-                text = `${T('transport')} ➔ ${targetName}`;
-                colorClass = "mission-transport"; icon = "💰";
+    // 1. FILTER: Only show missions involving THIS village (as Origin or Target)
+    const relevantMissions = state.missions.filter(m => 
+        m.originId === v.id || m.targetId === v.id
+    );
+
+    // 2. SORT: By arrival time
+    const sortedMissions = relevantMissions.sort((a, b) => a.arrival - b.arrival);
+
+    el.innerHTML = sortedMissions.map(m => {
+        const ms = Math.max(0, m.arrival - Date.now());
+        const timeStr = formatTime(ms);
+        
+        // Helpers to resolve names
+        const getV = (id) => state.villages.find(vil => vil.id === id);
+        const originV = getV(m.originId);
+        const targetV = getV(m.targetId);
+        
+        const originName = originV ? `${originV.name} (${originV.x}|${originV.y})` : "Unknown";
+        const targetName = targetV ? `${targetV.name} (${targetV.x}|${targetV.y})` : "Unknown";
+
+        // Directions
+        const isIncoming = m.targetId === v.id; // It is coming TO us
+        const isReturn = m.type === 'return';
+
+        let text = "", colorClass = "", icon = "";
+
+        // --- DISPLAY LOGIC ---
+
+        if (m.type === 'attack') {
+            if (isIncoming) {
+                // DANGER: We are being attacked!
+                text = `<b>${T('incoming')}</b> ${T('from')} <br>⚔️ ${originName}`;
+                colorClass = "mission-incoming"; 
+                icon = "🚨";
             } else {
-                text = `${T('return')}`;
-                colorClass = "mission-return"; icon = "🔙";
+                // OUTGOING: We are attacking someone
+                text = `${T('attack')} ➔ ${targetName}`;
+                colorClass = "mission-attack"; 
+                icon = "⚔️";
             }
+        } 
+        else if (m.type === 'support') {
+            if (isIncoming) {
+                if (isReturn) {
+                    // Logic catch: Returns are usually type='return', but just in case
+                    text = `${T('return')} ${T('from')} ${originName}`;
+                    colorClass = "mission-return"; 
+                    icon = "🔙";
+                } else {
+                    text = `${T('support')} ${T('from')} <br>🛡️ ${originName}`;
+                    colorClass = "mission-support"; 
+                    icon = "🛡️";
+                }
+            } else {
+                text = `${T('support')} ➔ ${targetName}`;
+                colorClass = "mission-support"; 
+                icon = "🛡️";
+            }
+        } 
+        else if (m.type === 'transport') {
+            if (isIncoming) {
+                text = `${T('transport')} ${T('from')} <br>💰 ${originName}`;
+                colorClass = "mission-transport"; 
+                icon = "📦";
+            } else {
+                text = `${T('transport')} ➔ ${targetName}`;
+                colorClass = "mission-transport"; 
+                icon = "💰";
+            }
+        } 
+        else if (m.type === 'return') {
+            // Returns always come home (Incoming)
+            text = `${T('return')} ${T('from')} <br>${originName}`; // Or "Return from Target" depending on how you stored logic
+            colorClass = "mission-return"; 
+            icon = "🔙";
+        }
 
-            return `
-            <div class="mission-card ${colorClass}">
-                <div class="m-icon">${icon}</div>
-                <div class="m-info">
-                    <div class="m-text">${text}</div>
-                    <div class="m-timer">${timeStr}</div>
-                </div>
-            </div>`;
-        }).join('');
-    },
+        return `
+        <div class="mission-card ${colorClass}">
+            <div class="m-icon">${icon}</div>
+            <div class="m-info">
+                <div class="m-text">${text}</div>
+                <div class="m-timer">${timeStr}</div>
+            </div>
+        </div>`;
+    }).join('');
+    
+    if (sortedMissions.length === 0) {
+        el.innerHTML = `<div style="padding:10px; color:#999; text-align:center; font-size:11px;">${T('no_missions') || "No active movements"}</div>`;
+    }
+},
 
     renderReports: function () { document.getElementById('report-list').innerHTML = state.reports.map((r, i) => `<div class="report-item report-${r.type}" onclick="ui.openReport(${i})"><span>${r.title}</span><span>${r.time}</span></div>`).join(''); },
     openReport: function (i) { document.getElementById('r-modal-content').innerHTML = state.reports[i].content; document.getElementById('report-modal').style.display = 'flex'; },

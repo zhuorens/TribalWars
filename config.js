@@ -7,12 +7,12 @@ const CONFIG = {
     marketCapacityPerLevel: 1000, // How many resources 1 level can carry
     buildQueueLimit: 5,
     
-    aiGrowthInterval: 120 * 60 * 1000, // Enemies try to build every 2 hours
-    aiGrowthChance: 0.5, // 50% chance to succeed per check
+    aiGrowthInterval: 100 * 60 * 1000, // Enemies try to build every 2 hours
+    aiGrowthChance: 0.7, // 50% chance to succeed per check
 
     aiAttackEnabled: true,
-    aiAttackInterval: 90 * 60 * 1000, // Check for attack every 10 minutes
-    aiAttackChance: 0.1, // 30% chance to attack when interval hits
+    aiAttackInterval: 100 * 60 * 1000, // Check for attack every 10 minutes
+    aiAttackChance: 0.3, // 30% chance to attack when interval hits
     aiAttackRange: 15, // Max distance tiles
     aiAttackStrength: 0.4 // Multiplier relative to player points (0.5 = 50% of player strength)
 };
