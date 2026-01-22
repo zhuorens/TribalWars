@@ -599,39 +599,81 @@ const engine = {
         // PHASE 2: MAIN COMBAT
         // ===============================================
         if (otherAttackingUnits) {
-            let off = 0, def = 0;
+            let offInf = 0;
+            let offCav = 0;
+            let defGenTotal = 0; // General Defense (vs Infantry)
+            let defCavTotal = 0; // Cavalry Defense (vs Cavalry)
 
-            // Calculate Offense (Skip Scouts)
+            // 1. Calculate Attacker Offense (Split by Type)
             for (let u in m.units) {
                 if (u !== "Scout") {
-                    off += m.units[u] * DB.units[u].att * getTechMultiplier(origin?.techs?.[u] || 1);
+                    const count = m.units[u];
+                    const stats = DB.units[u];
+                    const tech = getTechMultiplier(origin?.techs?.[u] || 1);
+
+                    if (stats.type === 'cav') {
+                        offCav += count * stats.att * tech;
+                    } else {
+                        offInf += count * stats.att * tech;
+                    }
                 }
             }
-            // Calculate Defense
+
+            const totalOff = offInf + offCav;
+
+            // 2. Calculate Defender Stats (Sum up BOTH defense types)
             for (let u in defTotal) {
-                def += defTotal[u] * DB.units[u].def * getTechMultiplier(target.techs?.[u] || 1);
+                const count = defTotal[u];
+                const stats = DB.units[u];
+                const tech = getTechMultiplier(target.techs?.[u] || 1);
+
+                // Note: Use 'def' for Infantry Defense, 'defCav' for Cavalry Defense
+                defGenTotal += count * (stats.def || 0) * tech;
+                defCavTotal += count * (stats.defCav || 0) * tech;
             }
 
+            // 3. Wall Bonus Logic
             const currentWallLvl = target.buildings["Wall"] || 0;
             let effectiveWallLvl = currentWallLvl;
 
-            // Ram Logic (Tactical)
             if (m.units["Ram"] > 0) {
-                const bonusReduction = Math.floor(m.units["Ram"] / 20);
+                // Apply Ram Tech Multiplier (Fixed from previous step)
+                const ramTech = getTechMultiplier(origin?.techs?.["Ram"] || 1);
+                const ramPower = m.units["Ram"] * ramTech;
+
+                // Assuming 20 Rams (Power) lowers bonus by 1 level
+                const bonusReduction = Math.floor(ramPower / 20);
                 effectiveWallLvl = Math.max(0, currentWallLvl - bonusReduction);
             }
 
-            // Wall Bonus
-            const wallBonus = 1 + (effectiveWallLvl * 0.05);
-            def *= wallBonus;
-            def += (effectiveWallLvl * 20);
+            const wallBonus = 1 + (effectiveWallLvl * 0.05); // +5% per level
+            const baseDefAdd = effectiveWallLvl * 20;        // +20 base def per level
 
-            win = off > def;
+            // Apply Wall Bonus to BOTH defense pools
+            defGenTotal = (defGenTotal * wallBonus) + baseDefAdd;
+            defCavTotal = (defCavTotal * wallBonus) + baseDefAdd;
 
-            const ratio = (off === 0 && def === 0) ? 1 : (win ? (def / off) : (off / def));
-            const lossFactor = (off === 0 && def === 0) ? 0 : Math.pow(ratio, 1.5);
+            // 4. Calculate WEIGHTED DEFENSE
+            // If attack is 70% Cav, we use 70% of Cav Def + 30% of Gen Def
+            let finalDef = 0;
+            if (totalOff > 0) {
+                const infRatio = offInf / totalOff;
+                const cavRatio = offCav / totalOff;
+                finalDef = (defGenTotal * infRatio) + (defCavTotal * cavRatio);
+            } else {
+                // Edge case: Attacker has 0 offense (e.g. only sent Rams/Scouts with 0 attack?)
+                finalDef = defGenTotal;
+            }
 
-            // Apply Losses to Attacker (Skip Scouts)
+            // 5. Determine Winner & Losses
+            win = totalOff > finalDef;
+
+            const ratio = (totalOff === 0 && finalDef === 0) ? 1 : (win ? (finalDef / totalOff) : (totalOff / finalDef));
+            const lossFactor = (totalOff === 0 && finalDef === 0) ? 0 : Math.pow(ratio, 1.5);
+
+            // (Copy the exact same loss application logic from previous answers here)
+
+            // Apply Losses to Attacker
             if (win) {
                 for (let u in m.units) {
                     if (u !== "Scout") m.units[u] -= Math.floor(m.units[u] * lossFactor);
@@ -642,7 +684,7 @@ const engine = {
                 }
             }
 
-            // Apply Losses to Defender (Skip Scouts)
+            // Apply Losses to Defender
             const defLossFactor = win ? 1 : lossFactor;
             const killDef = (obj) => {
                 for (let u in obj) {
@@ -652,38 +694,34 @@ const engine = {
             killDef(target.units);
             if (target.stationed) target.stationed.forEach(s => killDef(s.units));
 
-            // Ram Destruction (Permanent)
+            // Ram Destruction Logic (with tech fix)
             if (m.units["Ram"] > 0 && currentWallLvl > 0) {
                 let effectiveRams = m.units["Ram"];
-                // If lost but close fight, use virtual rams for damage calc
                 if (!win && lossFactor < 0.9) {
                     const virtualRams = startAtt["Ram"] * (1 - lossFactor);
                     effectiveRams = Math.floor(virtualRams);
                 }
+                const ramTech = getTechMultiplier(origin?.techs?.["Ram"] || 1);
+                const levelsDestroyed = Math.floor((effectiveRams * ramTech) / 20); // 20 Power = 1 Level
 
-                const levelsDestroyed = Math.floor(effectiveRams / 20);
                 if (levelsDestroyed > 0) {
                     const newLvl = Math.max(0, currentWallLvl - levelsDestroyed);
                     const lost = currentWallLvl - newLvl;
                     target.buildings["Wall"] = newLvl;
-
-                    // Update Points
                     target.points = engine.calculatePoints(target);
                     if (state.mapData[`${target.x},${target.y}`]) state.mapData[`${target.x},${target.y}`].points = target.points;
-
                     wallMsg = `<div style="color:#a00; font-weight:bold;">🚜 ${T('wall_damaged')}: ${currentWallLvl} ➔ ${newLvl} (-${lost})</div>`;
                 }
             }
 
-            // Noble Logic
+            // Noble Logic (unchanged)
             if (win && m.units["Noble"] > 0) {
+                // ... existing noble logic ...
                 const nobleCount = m.units["Noble"];
                 let totalDrop = 0;
                 for (let i = 0; i < nobleCount; i++) totalDrop += Math.floor(20 + Math.random() * 16);
-
                 target.loyalty -= totalDrop;
                 loyaltyMsg = `<div style="color:blue"><b>${T('loyalty')} ${Math.floor(target.loyalty)}!</b> (-${totalDrop})</div>`;
-
                 if (target.loyalty <= 0) {
                     target.owner = "player";
                     target.loyalty = 25;
@@ -694,7 +732,6 @@ const engine = {
                 }
             }
         } else {
-            // Pure scout mission: Result depends on scout survival
             win = scoutWin;
         }
 

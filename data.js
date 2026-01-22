@@ -14,7 +14,7 @@ const DB = {
             factor: 1.25,
             basePop: 5,   // Increased slightly (Standard: 5)
             time: 60,
-            points: 1,
+            points: 6,
             maxLevel: 30,
             desc: "生产木材"
         },
@@ -23,7 +23,7 @@ const DB = {
             factor: 1.25,
             basePop: 5,   // Increased slightly
             time: 60,
-            points: 1,
+            points: 6,
             maxLevel: 30,
             desc: "生产粘土"
         },
@@ -32,7 +32,7 @@ const DB = {
             factor: 1.25,
             basePop: 5,   // Increased slightly
             time: 60,
-            points: 1,
+            points: 6,
             maxLevel: 30,
             desc: "生产铁矿"
         },
@@ -50,7 +50,7 @@ const DB = {
             factor: 1.27,
             basePop: 0,   // Must be 0
             time: 100,
-            points: 5,
+            points: 6,
             maxLevel: 30,
             desc: "增加资源存储上限"
         },
@@ -59,7 +59,7 @@ const DB = {
             factor: 1.26,
             basePop: 7,
             time: 300,
-            points: 10,
+            points: 16,
             maxLevel: 25,
             desc: "训练步兵"
         },
@@ -68,7 +68,7 @@ const DB = {
             factor: 1.26,
             basePop: 8,
             time: 600,
-            points: 15,
+            points: 20,
             maxLevel: 20,
             desc: "训练骑兵"
         },
@@ -77,7 +77,7 @@ const DB = {
             factor: 1.26,
             basePop: 8,
             time: 600,
-            points: 15,
+            points: 24,
             maxLevel: 15,
             desc: "训练攻城器械"
         },
@@ -86,7 +86,7 @@ const DB = {
             factor: 1.26,
             basePop: 20,
             time: 400,
-            points: 20,
+            points: 19,
             maxLevel: 10,
             desc: "研究单位科技"
         },
@@ -118,17 +118,124 @@ const DB = {
             desc: "运输资源"
         },
     },
-    units: {
-        // Added 'building' property
-        "Spear": { cost: [50, 30, 10], pop: 1, att: 10, def: 25, spd: 18, carry: 25, time: 20, maxLevel: 3, building: "Barracks" },
-        "Sword": { cost: [30, 30, 70], pop: 1, att: 25, def: 30, spd: 22, carry: 15, time: 25, maxLevel: 3, building: "Barracks" },
-        "Axe": { cost: [60, 30, 40], pop: 1, att: 40, def: 10, spd: 18, carry: 10, time: 22, maxLevel: 3, building: "Barracks" },
-        "Scout": { cost: [50, 50, 20], pop: 2, att: 0, def: 2, spd: 9, carry: 0, time: 30, maxLevel: 3, building: "Stable" },
-        "Light Cav": { cost: [125, 100, 250], pop: 4, att: 130, def: 30, spd: 10, carry: 80, time: 40, maxLevel: 3, building: "Stable" },
-        "Heavy Cav": { cost: [200, 150, 600], pop: 6, att: 150, def: 200, spd: 11, carry: 50, time: 60, maxLevel: 3, building: "Stable" },
-        "Ram": { cost: [300, 200, 200], pop: 5, att: 2, def: 20, spd: 30, carry: 0, time: 90, maxLevel: 3, building: "Workshop" },
-        "Catapult": { cost: [320, 400, 100], pop: 8, att: 100, def: 100, spd: 30, carry: 0, time: 120, maxLevel: 3, building: "Workshop" },
-        "Noble": { cost: [40000, 50000, 50000], pop: 100, att: 30, def: 100, spd: 35, carry: 0, time: 3600, maxLevel: 1, building: "Academy" }
+units: {
+        "Spear": { 
+            type: "inf", 
+            cost: [50, 30, 10], 
+            pop: 1, 
+            att: 10, 
+            def: 15,       // General Defense (vs Infantry)
+            defCav: 45,    // Cavalry Defense (vs Horses) - Spears are strong vs Cav
+            spd: 18,     // Renamed 'spd' to 'spd' for code consistency
+            carry: 25, 
+            time: 20, 
+            maxLevel: 3, 
+            building: "Barracks" 
+        },
+        "Sword": { 
+            type: "inf", 
+            cost: [30, 30, 70], 
+            pop: 1, 
+            att: 25, 
+            def: 50,       // Strong vs Infantry
+            defCav: 15,    // Weak vs Cavalry
+            spd: 22, 
+            carry: 15, 
+            time: 25, 
+            maxLevel: 3, 
+            building: "Barracks" 
+        },
+        "Axe": { 
+            type: "inf", 
+            cost: [60, 30, 40], 
+            pop: 1, 
+            att: 40, 
+            def: 10, 
+            defCav: 5, 
+            spd: 18, 
+            carry: 10, 
+            time: 22, 
+            maxLevel: 3, 
+            building: "Barracks" 
+        },
+        "Scout": { 
+            type: "cav", 
+            cost: [50, 50, 20], 
+            pop: 2, 
+            att: 0, 
+            def: 2, 
+            defCav: 1, 
+            spd: 9, 
+            carry: 0, 
+            time: 30, 
+            maxLevel: 3, 
+            building: "Stable" 
+        },
+        "Light Cav": { 
+            type: "cav", 
+            cost: [125, 100, 250], 
+            pop: 4, 
+            att: 130, 
+            def: 30, 
+            defCav: 40, 
+            spd: 10, 
+            carry: 80, 
+            time: 40, 
+            maxLevel: 3, 
+            building: "Stable" 
+        },
+        "Heavy Cav": { 
+            type: "cav", 
+            cost: [200, 150, 600], 
+            pop: 6, 
+            att: 150, 
+            def: 200, 
+            defCav: 80,    // Good hybrid defense
+            spd: 11, 
+            carry: 50, 
+            time: 60, 
+            maxLevel: 3, 
+            building: "Stable" 
+        },
+        "Ram": { 
+            type: "inf", 
+            cost: [300, 200, 200], 
+            pop: 5, 
+            att: 2, 
+            def: 20, 
+            defCav: 50, 
+            spd: 30, 
+            carry: 0, 
+            time: 90, 
+            maxLevel: 3, 
+            building: "Workshop" 
+        },
+        "Catapult": { 
+            type: "inf", 
+            cost: [320, 400, 100], 
+            pop: 8, 
+            att: 100, 
+            def: 100, 
+            defCav: 50, 
+            spd: 30, 
+            carry: 0, 
+            time: 120, 
+            maxLevel: 3, 
+            building: "Workshop" 
+        },
+        "Noble": { 
+            type: "inf", 
+            cost: [40000, 50000, 50000], 
+            pop: 100, 
+            att: 30, 
+            def: 100, 
+            defCav: 50, 
+            spd: 35, 
+            carry: 0, 
+            time: 3600, 
+            maxLevel: 1, 
+            building: "Academy" 
+        }
     },
     positions: {
         "Headquarters": { top: 40, left: 45, width: 12, height: 12, color: "#5d4037", zIndex: 10 },

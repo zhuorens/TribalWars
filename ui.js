@@ -59,29 +59,29 @@ const ui = {
         const v = engine.getCurrentVillage();
         ui.renderHeader(v);
         ui.renderVillageInfo(v);
-    
+
         document.getElementById('village-points').innerText = v.points || 0;
         document.getElementById('res-wood').innerText = Math.floor(v.res[0]);
         document.getElementById('res-clay').innerText = Math.floor(v.res[1]);
         document.getElementById('res-iron').innerText = Math.floor(v.res[2]);
-    
+
         // --- POPULATION UPDATE (Cleaned Up) ---
         const popUsed = engine.getPopUsed(v);
         const popMax = engine.getPopLimit(v);
-        
+
         const popElem = document.getElementById('pop-current');
         popElem.innerText = popUsed;
         document.getElementById('pop-max').innerText = popMax;
-        
+
         // Red color if full
         popElem.style.color = popUsed >= popMax ? "red" : "inherit";
-        
+
         // Storage
         document.getElementById('storage-max').innerText = engine.getStorage(v);
-    
+
         // --- Render All Queues ---
         let qHTML = "";
-    
+
         // Build Queue
         v.queues.build.forEach((item, idx) => {
             let rem;
@@ -95,7 +95,7 @@ const ui = {
             }
             qHTML += `<div class="q-item">🔨 <b>${T_Name(item.building)}</b> <span class="timer">${formatTime(rem)}</span> <button class="btn-x" onclick="game.cancel('build', ${idx})">❌</button></div>`;
         });
-    
+
         // Research Queue
         v.queues.research.forEach((item, idx) => {
             let rem;
@@ -107,39 +107,39 @@ const ui = {
             }
             qHTML += `<div class="q-item">🧪 <b>${T_Name(item.unit)}</b> <span class="timer">${formatTime(rem)}</span> <button class="btn-x" onclick="game.cancel('research', ${idx})">❌</button></div>`;
         });
-    
+
         // Unit Queues
         ['barracks', 'stable', 'workshop', 'academy'].forEach(qName => {
             if (v.queues[qName].length > 0) {
                 qHTML += `<div style="font-size:10px; font-weight:bold; color:#666; margin-top:2px; text-transform:uppercase;">${T_Name(qName.charAt(0).toUpperCase() + qName.slice(1))}</div>`;
-    
+
                 v.queues[qName].forEach((item, idx) => {
                     let totalRem = 0;
-    
+
                     if (idx === 0) {
                         // --- ACTIVE BATCH ---
                         // 1. Time remaining for the ONE unit currently being built
                         // If finish is not set yet (just added), assume full unitTime
                         const nextFinish = item.finish || (Date.now() + item.unitTime);
                         const timeForCurrent = Math.max(0, nextFinish - Date.now());
-    
+
                         // 2. Time for the remaining units in this stack
                         const timeForRest = Math.max(0, item.count - 1) * item.unitTime;
-    
+
                         totalRem = timeForCurrent + timeForRest;
                     } else {
                         // --- WAITING BATCH ---
                         // These haven't started, so duration is full count * time per unit
                         totalRem = item.count * item.unitTime;
                     }
-    
+
                     qHTML += `<div class="q-item">⚔️ <b>${T_Name(item.unit)}</b> (${item.count}) <span class="timer">${formatTime(totalRem)}</span> <button class="btn-x" onclick="game.cancel('${qName}', ${idx})">❌</button></div>`;
                 });
             }
         });
-    
+
         document.getElementById('queues-container').innerHTML = qHTML;
-    
+
         if (document.getElementById('hq').classList.contains('active')) ui.renderVillage();
         if (document.getElementById('recruit').classList.contains('active')) ui.renderRecruit();
         if (document.getElementById('map').classList.contains('active')) ui.renderMinimap();
@@ -243,36 +243,45 @@ const ui = {
         const v = engine.getCurrentVillage();
         const div = document.getElementById('unit-list');
         div.innerHTML = "";
-    
+
         const groups = { "Barracks": [], "Stable": [], "Workshop": [], "Academy": [] };
         for (let u in DB.units) {
             if (u === "Catapult" && !CONFIG.enableCatapults) continue;
             const b = DB.units[u].building || "Barracks";
             if (groups[b]) groups[b].push(u);
         }
-    
+
         for (let b in groups) {
             if (groups[b].length === 0) continue;
             const bLvl = v.buildings[b] || 0;
             const isLocked = bLvl === 0;
             const color = isLocked ? "red" : "#666";
-    
+
             div.innerHTML += `<div style="width:100%; font-weight:bold; margin-top:10px; border-bottom:1px solid #ccc;">
-                ${T_Name(b)} <span style="font-size:11px; color:${color}">(Lv ${bLvl})</span>
-            </div>`;
-    
+            ${T_Name(b)} <span style="font-size:11px; color:${color}">(Lv ${bLvl})</span>
+        </div>`;
+
             groups[b].forEach(u => {
                 const d = DB.units[u];
                 const tech = (v.techs && v.techs[u]) ? v.techs[u] : 1;
                 const factor = getTechMultiplier(tech);
+
+                // 1. Calculate Boosted Stats
                 const att = Math.floor(d.att * factor);
                 const def = Math.floor(d.def * factor);
+                const defCav = Math.floor((d.defCav || 0) * factor); // Added Cav Def
+
                 const isBoosted = tech > 1 ? "color:green; font-weight:bold;" : "";
-    
-                // Logic for buttons (Farm check included from previous steps)
+
+                // 2. Calculate Training Time Reduction
+                // Formula: BaseTime * 0.9^(Level - 1) (Recruits 10% faster per level)
+                const timeMultiplier = Math.pow(0.9, Math.max(0, bLvl - 1));
+                const realTime = Math.max(1, Math.floor(d.time * timeMultiplier));
+
+                // Logic for buttons
                 const popAvail = engine.getPopLimit(v) - engine.getPopUsed(v);
                 const hasSpace = popAvail >= d.pop;
-                
+
                 let btnHtml = "";
                 if (isLocked) {
                     btnHtml = `<button class="btn" style="width:100%; background:#ccc; color:#666; border:1px solid #999;" disabled>${T('requires')} ${T_Name(b)}</button>`;
@@ -280,33 +289,34 @@ const ui = {
                     btnHtml = `<button class="btn" style="width:100%; background:#faa; color:#900;" disabled>Farm Full</button>`;
                 } else {
                     btnHtml = `
-                        <button class="btn" style="flex:1" onclick="game.recruit('${u}')">${T('recruit')}</button>
-                        <button class="btn" style="width:40px;" onclick="game.recruitMax('${u}')">${T('max')}</button>
-                    `;
+                    <button class="btn" style="flex:1" onclick="game.recruit('${u}')">${T('recruit')}</button>
+                    <button class="btn" style="width:40px;" onclick="game.recruitMax('${u}')">${T('max')}</button>
+                `;
                 }
-    
+
                 const cardStyle = isLocked ? "background:#eee; opacity:0.7;" : "";
-    
+
                 div.innerHTML += `
-                <div class="card" style="${cardStyle}">
-                    <h3>
-                        ${T_Name(u)} 
-                        <span style="font-size:11px; color:#444;">(Lv ${tech})</span> 
-                        <span style="font-size:12px; float:right; color:#666">${T('troops')}: ${v.units[u]}</span>
-                    </h3>
-                    <div class="unit-stats">
-                        <span style="${isBoosted}">⚔️ ${att}</span>
-                        <span style="${isBoosted}">🛡️ ${def}</span>
-                        <span>👥 ${d.pop}</span> 
-                        <span>🎒 ${d.carry}</span>
-                        <span>🏃 ${d.spd}</span> </div>
-                    <div class="unit-cost">
-                        🌲${d.cost[0]} 🧱${d.cost[1]} 🔩${d.cost[2]} | ⏳ ${formatTime(d.time * 1000)}
-                    </div>
-                    <div style="display:flex; gap:2px; margin-top:5px;">
-                        ${btnHtml}
-                    </div>
-                </div>`;
+            <div class="card" style="${cardStyle}">
+                <h3>
+                    ${T_Name(u)} 
+                    <span style="font-size:11px; color:#444;">(Lv ${tech})</span> 
+                    <span style="font-size:12px; float:right; color:#666">${T('troops')}: ${v.units[u]}</span>
+                </h3>
+                <div class="unit-stats">
+                    <span style="${isBoosted}" title="Attack">⚔️ ${att}</span>
+                    <span style="${isBoosted}" title="Infantry Defense">🛡️ ${def}</span>
+                    <span style="${isBoosted}" title="Cavalry Defense">🐎 ${defCav}</span>
+                    <span>👥 ${d.pop}</span> 
+                    <span>🎒 ${d.carry}</span>
+                    <span>🏃 ${d.spd}m</span> </div>
+                <div class="unit-cost">
+                    🌲${d.cost[0]} 🧱${d.cost[1]} 🔩${d.cost[2]} | ⏳ ${formatTime(realTime * 1000)}
+                </div>
+                <div style="display:flex; gap:2px; margin-top:5px;">
+                    ${btnHtml}
+                </div>
+            </div>`;
             });
         }
     },
@@ -317,20 +327,20 @@ const ui = {
             const found = state.villages.find(v => v.id === t.id);
             if (found) target = found;
         }
-    
+
         ui.selTile = target;
         const v = engine.getCurrentVillage();
         const owner = target.owner || target.type;
         const isMyVillage = owner === 'player' && state.villages.some(vil => vil.id === target.id);
-    
+
         // 1. Build Unit Inputs with 'oninput' trigger
         let html = `<div style="margin-bottom:10px; font-weight:bold; text-align:right;">
                         ⏱️ ${T('duration')}: <span id="attack-duration">--:--:--</span>
                     </div>`;
-        
+
         // Sort units by speed (optional, but looks nice)
         const unitKeys = Object.keys(v.units).filter(u => v.units[u] > 0);
-        
+
         if (unitKeys.length === 0) {
             html = T('noTroops');
         } else {
@@ -349,16 +359,16 @@ const ui = {
         }
 
         if (state.reports) {
-            const recent = state.reports.filter(r => 
-                r.targetId === target.id && 
+            const recent = state.reports.filter(r =>
+                r.targetId === target.id &&
                 r.missionType === 'attack'
             ).slice(0, 5); // Show max 5
-    
+
             if (recent.length > 0) {
                 html += `<div style="margin-top:15px; padding-top:10px; border-top:1px solid #ddd;">
                     <div style="font-size:11px; font-weight:bold; color:#555; margin-bottom:5px;">📋 ${T('recent_reports') || "Recent Attacks"}</div>
                     <table style="width:100%; font-size:10px; border-collapse:collapse;">`;
-                
+
                 recent.forEach(r => {
                     // Dot Color: Green = Win, Red = Loss
                     const dot = r.type === 'win' ? '🟢' : '🔴';
@@ -372,49 +382,49 @@ const ui = {
                 html += `</table></div>`;
             }
         }
-    
+
         const coords = (target.x !== undefined && target.y !== undefined) ? `(${target.x}|${target.y})` : "";
         const titleText = isMyVillage
             ? `${target.name} ${coords} - ${T('village')}`
             : `${T('target')}: ${target.name} ${coords}`;
-    
+
         document.getElementById('a-modal-title').innerText = titleText;
         document.getElementById('a-modal-units').innerHTML = html;
-    
+
         const footer = document.querySelector('#attack-modal .modal-actions');
         const marketLvl = v.buildings["Market"] || 0;
         const resBtn = marketLvl > 0
             ? `<button class="btn btn-blue" onclick="ui.closeAttackModal(); ui.openMarketModal(${target.id})">💰 ${T('transport')}</button>`
             : '';
-    
+
         // Button Logic
         let buttons = `<button class="btn btn-red" onclick="ui.closeAttackModal()">${T('btn_cancel')}</button>`;
-        
+
         if (isMyVillage) {
             buttons += `<button class="btn" onclick="ui.switchVillage(${target.id}); ui.closeAttackModal(); ui.showTab('hq', document.querySelector('.tab-btn'));">${T('village')}</button>`;
         } else {
             buttons += `<button class="btn" onclick="game.launchAttack('attack')">⚔️ ${T('attack')}</button>`;
         }
-        
+
         buttons += `<button class="btn btn-blue" onclick="game.launchAttack('support')">🛡️ ${T('support')}</button>`;
         buttons += resBtn;
-    
+
         footer.innerHTML = buttons;
         document.getElementById('attack-modal').style.display = 'flex';
-        
+
         // Reset timer display
-        ui.updateTravelTime(); 
+        ui.updateTravelTime();
     },
-    
+
     // --- NEW HELPER: Update Time Display ---
-    updateTravelTime: function() {
+    updateTravelTime: function () {
         const origin = engine.getCurrentVillage();
         const target = ui.selTile;
         if (!target) return;
-    
+
         let slowestSpeed = 0;
         let hasUnits = false;
-    
+
         // Check all inputs
         for (let u in DB.units) {
             const el = document.getElementById('atk-' + u);
@@ -426,18 +436,18 @@ const ui = {
                 }
             }
         }
-    
+
         const display = document.getElementById('attack-duration');
         if (!hasUnits) {
             display.innerText = "--:--:--";
             return;
         }
-    
+
         // Calc Distance
         const dx = Math.abs(origin.x - target.x);
         const dy = Math.abs(origin.y - target.y);
         const dist = Math.sqrt(dx * dx + dy * dy);
-    
+
         // Calc Time
         const ms = dist * slowestSpeed * 6 * 1000;
         display.innerText = formatTime(ms);
@@ -515,8 +525,9 @@ const ui = {
     renderVillage: function () {
         const v = engine.getCurrentVillage();
         const map = document.getElementById('village-map');
-        map.innerHTML = "";
+        if (!map) return;
 
+        map.innerHTML = "";
         map.style.position = "relative";
         map.style.height = "550px";
         map.style.border = "1px solid #999";
@@ -524,19 +535,62 @@ const ui = {
 
         for (let b in DB.positions) {
             const pos = DB.positions[b];
+            const d = DB.buildings[b];
+
+            // 1. Calculate Virtual Level (Current + Queue)
+            const currentLvl = v.buildings[b] || 0;
+            const queuedCount = v.queues.build.filter(q => q.building === b).length;
+            const virtualLvl = currentLvl + queuedCount;
+            const maxLvl = d.maxLevel || 30;
+
+            // Create Spot Div
             const div = document.createElement('div');
             div.className = "b-spot";
-            div.style.top = pos.top + "%"; div.style.left = pos.left + "%";
-            div.style.width = pos.width + "%"; div.style.height = pos.height + "%";
+            div.style.top = pos.top + "%";
+            div.style.left = pos.left + "%";
+            div.style.width = pos.width + "%";
+            div.style.height = pos.height + "%";
             div.style.zIndex = pos.zIndex || 5;
             div.style.backgroundColor = pos.backgroundColor || pos.color || "rgba(100,100,100,0.5)";
             if (pos.shape) div.style.borderRadius = pos.shape;
             if (pos.border) div.style.border = pos.border;
-            const lvl = v.buildings[b];
-            if (b !== "Wall") div.innerHTML = `<div class="b-lvl">${lvl}</div><div>${T_Name(b)}</div>`;
-            const d = DB.buildings[b];
-            const cost = [Math.floor(d.base[0] * Math.pow(d.factor, lvl)), Math.floor(d.base[1] * Math.pow(d.factor, lvl)), Math.floor(d.base[2] * Math.pow(d.factor, lvl))];
-            if (v.res[0] >= cost[0] && v.res[1] >= cost[1] && v.res[2] >= cost[2]) div.classList.add('affordable');
+
+            // 2. Determine Display Content
+            // If maxed, show "MAX" or a star. Otherwise show level.
+            let lvlDisplay = virtualLvl;
+            if (virtualLvl >= maxLvl) {
+                lvlDisplay = `<span style="color:gold; font-size:10px;">MAX</span>`;
+            } else if (queuedCount > 0) {
+                // Optional: Indicate queue activity (e.g. "5+1")
+                lvlDisplay = `${currentLvl}<span style="font-size:9px">+${queuedCount}</span>`;
+            }
+
+            if (b !== "Wall") {
+                div.innerHTML = `<div class="b-lvl">${lvlDisplay}</div><div>${T_Name(b)}</div>`;
+            }
+
+            // 3. Affordability Check (Only if not maxed)
+            if (virtualLvl < maxLvl) {
+                // Calculate cost for the NEXT level (Virtual Level)
+                const cost = [
+                    Math.floor(d.base[0] * Math.pow(d.factor, virtualLvl)),
+                    Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)),
+                    Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
+                ];
+
+                // Check if player has resources + storage space (optional but good practice)
+                if (v.res[0] >= cost[0] && v.res[1] >= cost[1] && v.res[2] >= cost[2]) {
+                    // Also check Population Limit if applicable
+                    const popNeeded = Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl));
+                    const popAvail = engine.getPopLimit(v) - engine.getPopUsed(v);
+
+                    // Only glow if we have Res AND Pop (except for Farm/Warehouse which don't need pop)
+                    if (b === "Farm" || b === "Warehouse" || popAvail >= popNeeded) {
+                        div.classList.add('affordable');
+                    }
+                }
+            }
+
             div.onclick = (e) => { e.stopPropagation(); ui.openBuildingModal(b); };
             map.appendChild(div);
         }
@@ -546,19 +600,23 @@ const ui = {
         ui.selBuild = bName;
         const v = engine.getCurrentVillage();
         const d = DB.buildings[bName];
+        const maxLvl = d.maxLevel || 30; // Get max level from DB
 
+        // --- SMITHY HANDLING (Research + Upgrade) ---
         if (bName === "Smithy") {
             document.getElementById('b-modal-title').innerText = T_Name("Smithy");
-            document.getElementById('b-modal-desc').innerText = "Research units and upgrade the building.";
+            document.getElementById('b-modal-desc').innerText = d.desc;
 
+            // 1. Render Unit Research List
             let html = "<div style='display:grid; grid-template-columns: 1fr 1fr; gap:5px; max-height:200px; overflow-y:auto; margin-bottom:10px;'>";
             for (let u in DB.units) {
                 if (u === "Catapult" && !CONFIG.enableCatapults) continue;
                 if (!v.techs) v.techs = {};
                 const curLvl = v.techs[u] || 1;
                 const nextLvl = curLvl + 1;
-                const maxLvl = DB.units[u].maxLevel || 3;
-                if (curLvl >= maxLvl) {
+                const uMax = DB.units[u].maxLevel || 3;
+
+                if (curLvl >= uMax) {
                     html += `<div style="background:#eee; padding:5px; font-size:12px; border:1px solid #ccc; opacity:0.7"><b>${T_Name(u)}</b><br><span style="color:gold;">★ ${T('max')} (Lv${curLvl})</span></div>`;
                 } else {
                     const rc = DB.units[u].cost.map(x => Math.floor(x * curLvl * 15));
@@ -569,14 +627,101 @@ const ui = {
             }
             html += "</div>";
 
+            // 2. Check Building Upgrade Status
             const queuedCount = v.queues.build.filter(q => q.building === bName).length;
             const virtualLvl = v.buildings[bName] + queuedCount;
 
+            // --- NEW: Max Level Check ---
+            if (virtualLvl >= maxLvl) {
+                html += `<hr><div style="text-align:center; padding:10px; color:#555; background:#f9f9f9; border:1px solid #eee; margin-top:5px;">
+                <h4>${T_Name(bName)} (Lv ${virtualLvl})</h4>
+                <div style="font-weight:bold; color:#888;">${T('max_level') || "Max Level Reached"}</div>
+            </div>`;
+
+                document.getElementById('b-modal-cost').innerHTML = html;
+                document.getElementById('b-modal-btn').style.display = 'none'; // Hide main button
+            } else {
+                // Not max level: Show upgrade cost and button
+                const c = [
+                    Math.floor(d.base[0] * Math.pow(d.factor, virtualLvl)),
+                    Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)),
+                    Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
+                ];
+                const hqLvl = v.buildings["Headquarters"] || 1;
+                const speedMod = Math.pow(0.95, hqLvl);
+                const tSeconds = Math.floor(d.time * Math.pow(1.2, virtualLvl) * speedMod);
+
+                let queueStatus = "";
+                if (queuedCount > 0) {
+                    queueStatus = `<div style="color:blue; font-size:11px; margin-bottom:5px;">${T('check_queue').replace('%s', queuedCount)}</div>`;
+                }
+
+                html += `<hr><h4>${T('upgrade')} ${T_Name(bName)} (Lv ${virtualLvl} ➔ ${virtualLvl + 1})</h4>`;
+                html += `${queueStatus}`;
+
+                const btnText = `${T('upgrade')} ${T_Name(bName)}`;
+
+                html += `<div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:11px;">🌲${c[0]} 🧱${c[1]} 🔩${c[2]} | ⏳ ${formatTime(tSeconds * 1000)}</span>
+                        <button id="smithy-upgrade-btn" class="btn">${btnText}</button>
+                     </div>`;
+
+                document.getElementById('b-modal-cost').innerHTML = html;
+                document.getElementById('b-modal-btn').style.display = 'none';
+
+                // Bind click event after HTML injection
+                setTimeout(() => {
+                    const btn = document.getElementById('smithy-upgrade-btn');
+                    if (btn) {
+                        btn.onclick = () => { game.build(bName); ui.openBuildingModal(bName); };
+
+                        const isQueueFull = v.queues.build.length >= CONFIG.buildQueueLimit;
+                        const canAfford = v.res[0] >= c[0] && v.res[1] >= c[1] && v.res[2] >= c[2];
+
+                        if (isQueueFull) {
+                            btn.innerText = T('queue_full');
+                            btn.disabled = true;
+                        } else if (!canAfford) {
+                            btn.disabled = true;
+                        }
+                    }
+                }, 0);
+            }
+
+            document.getElementById('building-modal').style.display = 'flex';
+            return;
+        }
+
+        // --- STANDARD BUILDING HANDLING ---
+        const queuedCount = v.queues.build.filter(q => q.building === bName).length;
+        const virtualLvl = v.buildings[bName] + queuedCount;
+
+        document.getElementById('b-modal-title').innerText = `${T_Name(bName)} (Lv ${virtualLvl})`;
+        document.getElementById('b-modal-desc').innerText = d.desc;
+
+        // --- NEW: Max Level Check ---
+        if (virtualLvl >= maxLvl) {
+            // Max Level UI
+            let queueStatus = "";
+            if (queuedCount > 0) {
+                queueStatus = `<div style="color:blue; font-size:11px; margin-bottom:5px;">${T('check_queue').replace('%s', queuedCount)}</div>`;
+            }
+
+            document.getElementById('b-modal-cost').innerHTML = `
+            ${queueStatus}
+            <div style="text-align:center; padding:15px; font-weight:bold; color:#555; background:#f5f5f5; border:1px solid #eee;">
+                ${T('max_level') || "Max Level Reached"}
+            </div>
+        `;
+            document.getElementById('b-modal-btn').style.display = 'none';
+        } else {
+            // Upgrade UI
             const c = [
                 Math.floor(d.base[0] * Math.pow(d.factor, virtualLvl)),
                 Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)),
                 Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
             ];
+
             const hqLvl = v.buildings["Headquarters"] || 1;
             const speedMod = Math.pow(0.95, hqLvl);
             const tSeconds = Math.floor(d.time * Math.pow(1.2, virtualLvl) * speedMod);
@@ -586,75 +731,22 @@ const ui = {
                 queueStatus = `<div style="color:blue; font-size:11px; margin-bottom:5px;">${T('check_queue').replace('%s', queuedCount)}</div>`;
             }
 
-            html += `<hr><h4>${T('upgrade')} ${T_Name(bName)} (Lv ${virtualLvl} ➔ ${virtualLvl + 1})</h4>`;
-            html += `${queueStatus}`;
-
-            const btnText = `${T('upgrade')} ${T_Name(bName)}`;
-
-            html += `<div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span>🌲${c[0]} 🧱${c[1]} 🔩${c[2]} | ⏳ ${formatTime(tSeconds * 1000)}</span>
-                        <button id="smithy-upgrade-btn" class="btn">${btnText}</button>
-                     </div>`;
-
-            document.getElementById('b-modal-cost').innerHTML = html;
-            document.getElementById('b-modal-btn').style.display = 'none';
-
-            setTimeout(() => {
-                const btn = document.getElementById('smithy-upgrade-btn');
-                if (btn) {
-                    btn.onclick = () => { game.build(bName); ui.openBuildingModal(bName); };
-                    const isQueueFull = v.queues.build.length >= CONFIG.buildQueueLimit;
-                    const canAfford = v.res[0] >= c[0] && v.res[1] >= c[1] && v.res[2] >= c[2];
-
-                    if (isQueueFull) {
-                        btn.innerText = T('queue_full');
-                        btn.disabled = true;
-                    } else if (!canAfford) {
-                        btn.disabled = true;
-                    }
-                }
-            }, 0);
-
-            document.getElementById('building-modal').style.display = 'flex';
-            return;
-        }
-
-        // --- STANDARD BUILDING HANDLING ---
-        const queuedCount = v.queues.build.filter(q => q.building === bName).length;
-        const virtualLvl = v.buildings[bName] + queuedCount;
-        const c = [
-            Math.floor(d.base[0] * Math.pow(d.factor, virtualLvl)),
-            Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)),
-            Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
-        ];
-        // FIX: HQ Speed Bonus applied to display
-        const hqLvl = v.buildings["Headquarters"] || 1;
-        const speedMod = Math.pow(0.95, hqLvl);
-        const tSeconds = Math.floor(d.time * Math.pow(1.2, virtualLvl) * speedMod);
-
-        document.getElementById('b-modal-title').innerText = `${T_Name(bName)} (Lv ${virtualLvl})`;
-        document.getElementById('b-modal-desc').innerText = d.desc;
-
-        let queueStatus = "";
-        if (queuedCount > 0) {
-            queueStatus = `<div style="color:blue; font-size:11px; margin-bottom:5px;">${T('check_queue').replace('%s', queuedCount)}</div>`;
-        }
-
-        document.getElementById('b-modal-cost').innerHTML = `
+            document.getElementById('b-modal-cost').innerHTML = `
             ${queueStatus}
             ${T('cost')}: 🌲${c[0]} 🧱${c[1]} 🔩${c[2]} | ⏳ ${formatTime(tSeconds * 1000)}
         `;
 
-        const btn = document.getElementById('b-modal-btn');
-        btn.innerText = `${T('upgrade')} ${T_Name(bName)}`;
-        btn.style.display = 'inline-block';
-        btn.onclick = () => { game.build(bName); ui.openBuildingModal(bName); };
+            const btn = document.getElementById('b-modal-btn');
+            btn.innerText = `${T('upgrade')} ${T_Name(bName)}`;
+            btn.style.display = 'inline-block';
+            btn.onclick = () => { game.build(bName); ui.openBuildingModal(bName); };
 
-        const isQueueFull = v.queues.build.length >= CONFIG.buildQueueLimit;
-        const canAfford = v.res[0] >= c[0] && v.res[1] >= c[1] && v.res[2] >= c[2];
+            const isQueueFull = v.queues.build.length >= CONFIG.buildQueueLimit;
+            const canAfford = v.res[0] >= c[0] && v.res[1] >= c[1] && v.res[2] >= c[2];
 
-        btn.disabled = !canAfford || isQueueFull;
-        if (isQueueFull) btn.innerText = T('queue_full');
+            btn.disabled = !canAfford || isQueueFull;
+            if (isQueueFull) btn.innerText = T('queue_full');
+        }
 
         document.getElementById('building-modal').style.display = 'flex';
     },
@@ -697,24 +789,63 @@ const ui = {
     renderMinimap: function () {
         const cvs = document.getElementById('minimap');
         if (!cvs) return;
+
         const ctx = cvs.getContext('2d');
         const w = cvs.width, h = cvs.height;
+
+        // 1. Draw Background
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, w, h);
+
         const scale = w / CONFIG.mapSize;
+
+        // 2. Draw Villages
         state.villages.forEach(v => {
             const mx = v.x * scale;
             const my = v.y * scale;
             ctx.fillStyle = v.owner === 'player' ? '#FFFF00' : (v.owner === 'enemy' ? '#FF0000' : '#888888');
             ctx.fillRect(mx, my, 2, 2);
         });
-        const viewTiles = 15;
+
+        // 3. Draw Viewport Rectangle
+        const viewTiles = 15; // The number of tiles visible in your main map grid
         const rectSize = viewTiles * scale;
+
+        // Your existing logic implies state.mapView is the CENTER of the view
         const vx = state.mapView.x * scale;
         const vy = state.mapView.y * scale;
+
         ctx.strokeStyle = "#FFFFFF";
         ctx.lineWidth = 1;
         ctx.strokeRect(vx - (rectSize / 2), vy - (rectSize / 2), rectSize, rectSize);
+
+        // --- NEW: CLICK TO NAVIGATE ---
+        // We bind the click event directly to the canvas
+        cvs.onclick = (e) => {
+            const rect = cvs.getBoundingClientRect();
+
+            // Get Click Coordinates relative to the canvas
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            // Convert Pixel -> Map Coordinate
+            // Since state.mapView represents the CENTER, we just set it directly
+            let newX = Math.floor(clickX / scale);
+            let newY = Math.floor(clickY / scale);
+
+            // Clamp to map bounds so you don't scroll into the void
+            // (Optional: Keeps the center somewhat inside the map)
+            newX = Math.max(0, Math.min(CONFIG.mapSize, newX));
+            newY = Math.max(0, Math.min(CONFIG.mapSize, newY));
+
+            // Update State
+            state.mapView.x = newX;
+            state.mapView.y = newY;
+
+            // Refresh Displays
+            ui.renderMap();      // Renders the main grid
+            ui.renderMinimap();  // Re-renders this minimap (moves the white box)
+        };
     },
 
     updateMissions: function () {

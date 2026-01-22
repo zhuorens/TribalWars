@@ -79,6 +79,7 @@ const STRINGS = {
         'troops_returned': "Troops have returned home.",
         'troops_arrived': "Stationed troops arrived.",
         'to': "To",
+        'max_level': "Max Level",
         
         // ... (Keep UNIT NAMES and BUILDING NAMES) ...
         'Spear': 'Spearman', 'Sword': 'Swordsman', 'Axe': 'Axeman', 'Archer': 'Archer', 'Scout': 'Scout', 'Light Cav': 'Light Cavalry', 'Heavy Cav': 'Heavy Cavalry', 'Ram': 'Ram', 'Catapult': 'Catapult', 'Noble': 'Nobleman',
@@ -122,6 +123,7 @@ const STRINGS = {
         'troops_returned': "部队已返回大本营。",
         'troops_arrived': "增援部队已抵达。",
         'to': "前往",
+        'max_level': "满级",
 
         // ... (Keep UNIT NAMES and BUILDING NAMES) ...
         'Spear': '长矛兵', 'Sword': '剑士', 'Axe': '斧头兵', 'Archer': '弓箭手', 'Scout': '侦察兵', 'Light Cav': '轻骑兵', 'Heavy Cav': '重骑兵', 'Ram': '冲车', 'Catapult': '投石车', 'Noble': '贵族',
