@@ -30,7 +30,7 @@ function requestAutoSave() {
 
 // --- ENGINE (Logic) ---
 const engine = {
-    init: function () {
+init: function () {
         if (localStorage.getItem("tw_v5_save")) {
             try {
                 // Load Save
@@ -42,20 +42,60 @@ const engine = {
 
                 state = { ...state, ...parsedData };
 
+                // --- 1. Restore Language Settings ---
+                if (state.lang) {
+                    LANG = state.lang;
+                } else {
+                    state.lang = 'en'; // Default
+                    LANG = 'en';
+                }
+
                 if (!state.selectedVillageId && state.villages.length > 0) {
                     state.selectedVillageId = state.villages[0].id;
                 }
+                
+                // --- 2. Initialize Profiles (For AI Warlords) ---
+                state.playerProfiles = state.playerProfiles || {};
+                
+                // Ensure critical profiles exist
+                if (!state.playerProfiles['player']) {
+                    state.playerProfiles['player'] = { name: "You", color: "#42a5f5", alive: true };
+                }
+                if (!state.playerProfiles['barbarian']) {
+                     state.playerProfiles['barbarian'] = { name: "Barbarians", color: "#bdbdbd", alive: true };
+                }
 
-                // MIGRATION: Fix old saves
+                // --- 3. MIGRATION: Fix old saves ---
                 state.villages.forEach(v => {
+                    // Fix data structure
                     if (!v.queues) v.queues = { build: [], research: [], barracks: [], stable: [], workshop: [], academy: [] };
                     if (!v.stationed) v.stationed = [];
                     if (v.buildings["Market"] === undefined) v.buildings["Market"] = 0;
+                    
+                    // Fix Barbarian ID mismatch ('barb' -> 'barbarian')
+                    if (v.owner === 'barb') v.owner = 'barbarian';
                 });
+
+                // Clean up old 'barb' profile key if present
+                if (state.playerProfiles['barb']) delete state.playerProfiles['barb'];
+
+                // Ensure AI Timer exists to prevent instant jumps
+                if (!state.lastAiUpdate) state.lastAiUpdate = Date.now();
 
             } catch (e) { console.error("Save Load Error:", e); }
         } else {
             // --- NEW GAME SETUP ---
+            
+            // 1. Initialize Profiles FIRST (Required for Map Generation)
+            state.playerProfiles = {
+                'player': { name: "You", color: "#42a5f5", alive: true },
+                'barbarian': { name: "Barbarians", color: "#bdbdbd", alive: true }
+            };
+
+            // 2. Initialize AI Timer
+            state.lastAiUpdate = Date.now();
+
+            // 3. Create Player Start
             const v = engine.createVillage(100, 100, "My Village", "player");
             state.villages.push(v);
             state.selectedVillageId = v.id;

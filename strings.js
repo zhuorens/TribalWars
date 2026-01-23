@@ -10,6 +10,7 @@ const STRINGS = {
         'tab_map': '🗺️ Map',
         'tab_reports': '📜 Reports',
         'tab_settings': '⚙️ Settings',
+        'tab_rankings': '🏆 Rankings',
         'header_lang': 'Language',
         'header_debug': 'Debug Tools',
         'header_cheat': 'Building Cheat',

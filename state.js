@@ -9,5 +9,6 @@ let state = {
     lastTick: Date.now(),
     lastAiUpdate: Date.now(),
     debugFastTravel: false,
-    selectedVillageId: null
+    selectedVillageId: null,
+    lang: "en"
 };

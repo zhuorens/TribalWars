@@ -24,6 +24,7 @@ const ui = {
     setLang: function (l) {
         if (!STRINGS[l]) { console.error("Language not found:", l); return; }
         LANG = l;
+        state.lang = l;
         ui.updateInterfaceText();
         ui.refresh();
         ui.renderMap();
