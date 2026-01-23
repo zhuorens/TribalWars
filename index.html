@@ -53,23 +53,31 @@
         <div id="map" class="tab-content">
             <button id="btn-return-home" class="btn" onclick="ui.centerMapOnVillage()">Return to Current
                 Village</button>
+            <div class="map-split-view">
 
-            <div class="map-layout">
-                <div class="map-nav-btn empty"></div>
-                <div class="map-nav-btn btn" onclick="game.moveMap(0, -15)">⬆️</div>
-                <div class="map-nav-btn empty"></div>
 
-                <div class="map-nav-btn btn" onclick="game.moveMap(-15, 0)">⬅️</div>
-                <div id="map-grid" class="map-grid"></div>
-                <div class="map-nav-btn btn" onclick="game.moveMap(15, 0)">➡️</div>
+                <div class="map-layout">
+                    <div class="map-nav-btn empty"></div>
+                    <div class="map-nav-btn btn" onclick="game.moveMap(0, -15)">⬆️</div>
+                    <div class="map-nav-btn empty"></div>
 
-                <div class="map-nav-btn empty"></div>
-                <div class="map-nav-btn btn" onclick="game.moveMap(0, 15)">⬇️</div>
-                <div class="map-nav-btn empty"></div>
-            </div>
+                    <div class="map-nav-btn btn" onclick="game.moveMap(-15, 0)">⬅️</div>
+                    <div id="map-grid" class="map-grid"></div>
+                    <div class="map-nav-btn btn" onclick="game.moveMap(15, 0)">➡️</div>
 
-            <div class="minimap-container">
-                <canvas id="minimap" width="150" height="150"></canvas>
+                    <div class="map-nav-btn empty"></div>
+                    <div class="map-nav-btn btn" onclick="game.moveMap(0, 15)">⬇️</div>
+                    <div class="map-nav-btn empty"></div>
+                </div>
+
+                <div class="minimap-sidebar">
+                    <div style="text-align:center; margin-bottom:5px; color:#3e2723; font-weight:bold;">
+                        Center: <span id="map-center-coords">--|--</span>
+                    </div>
+                    <div class="minimap-container">
+                        <canvas id="minimap"></canvas>
+                    </div>
+                </div>
             </div>
 
             <div style="text-align:center; margin-top:10px;">

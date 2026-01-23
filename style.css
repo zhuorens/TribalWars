@@ -24,7 +24,6 @@ body { font-family: 'Segoe UI', sans-serif; background-color: #3b2e2a; color: #3
 .b-lvl { background: rgba(0,0,0,0.6); padding: 1px 4px; border-radius: 3px; margin-bottom: 2px; }
 
 /* MAP LAYOUT (GRID) */
-.map-layout { display: grid; grid-template-columns: 40px auto 40px; grid-template-rows: 40px auto 40px; gap: 5px; justify-content: center; align-items: center; }
 .map-nav-btn { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; cursor: pointer; background: #689f38; color: white; border-radius: 4px; font-weight: bold; }
 .map-nav-btn:hover { background: #7cb342; }
 .map-nav-btn.empty { background: none; cursor: default; }
@@ -43,8 +42,8 @@ body { font-family: 'Segoe UI', sans-serif; background-color: #3b2e2a; color: #3
 }
 
 .tile {
-    width: 40px;  
-    height: 40px;
+    width: 38px;  
+    height: 38px;
     background-color: #8d6e63;
     cursor: pointer;
     position: relative;
@@ -76,23 +75,6 @@ body { font-family: 'Segoe UI', sans-serif; background-color: #3b2e2a; color: #3
     gap: 2px;
     padding: 5px;
     font-size: 12px;
-}
-
-/* Minimap Styles */
-.minimap-container {
-    position: absolute;
-    bottom: 10px;
-    right: 10px;
-    width: 150px;
-    height: 150px;
-    background: #000;
-    border: 2px solid #5d4037;
-    z-index: 100;
-}
-#minimap {
-    width: 100%;
-    height: 100%;
-    display: block;
 }
 
 /* Helper for max level */
@@ -390,3 +372,44 @@ body { font-family: 'Segoe UI', sans-serif; background-color: #3b2e2a; color: #3
     background-color: #f0f0f0 !important; /* Slightly darker on hover */
     filter: brightness(0.95);
 }
+/* The wrapper that holds Map (Left) and Minimap (Right) */
+.map-split-view {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start; /* Align tops of both maps */
+    gap: 20px; /* Space between the two */
+    margin-bottom: 20px;
+    flex-wrap: wrap; /* Wrap on small screens */
+}
+
+/* Sidebar Wrapper for Minimap */
+.minimap-sidebar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* OVERRIDE: Update Minimap Container to sit in flow */
+.minimap-container {
+    /* RESET Positioning */
+    position: static !important; 
+    bottom: auto;
+    right: auto;
+    
+    /* Set Size (Matches your previous logic) */
+    width: 600px;  
+    height: 600px;
+    
+    background: #000;
+    border: 4px solid #5d4037; /* Thicker border to match main map */
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+}
+
+/* Ensure Canvas fills the container */
+#minimap {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.map-layout { display: grid; grid-template-columns: 40px auto 40px; grid-template-rows: 40px auto 40px; gap: 5px; justify-content: center; align-items: center; }

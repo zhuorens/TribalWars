@@ -481,8 +481,8 @@ const engine = {
 
             // 2. RECRUITMENT (Units) - MOVED FROM TICK
             // Only AI Warlords build armies (Barbarians are passive farms)
-            if (isAi && Math.random() < 0.3) {
-                const MAX_AI_UNITS = v.points / 3; // Simple cap based on points
+            if (isAi && Math.random() < 0.25) {
+                const MAX_AI_UNITS = v.points / 2; // Simple cap based on points
                 const currentSpear = v.units["Spear"] || 0;
                 const currentSword = v.units["Sword"] || 0;
 
@@ -497,7 +497,7 @@ const engine = {
             }
 
             // 3. CONQUEST (The Dice Roll)
-            if (isAi && Math.random() < 0.05) {
+            if (isAi && Math.random() < 0.03 && v.buildings["Academy"] > 0) {
                 const range = 7;
                 const targets = state.villages.filter(t =>
                     Math.abs(t.x - v.x) <= range &&

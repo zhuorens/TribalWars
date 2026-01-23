@@ -859,11 +859,19 @@ const ui = {
         const cvs = document.getElementById('minimap');
         if (!cvs) return;
 
+        const rect = cvs.getBoundingClientRect();
+
+        // Only update if dimensions changed to avoid clearing context unnecessarily
+        if (cvs.width !== rect.width || cvs.height !== rect.height) {
+            cvs.width = rect.width;
+            cvs.height = rect.height;
+        }
+
         const ctx = cvs.getContext('2d');
         const w = cvs.width, h = cvs.height;
 
         // 1. Draw Background
-        ctx.fillStyle = "#000";
+        ctx.fillStyle = "#8d6e63";
         ctx.fillRect(0, 0, w, h);
 
         const scale = w / CONFIG.mapSize;
@@ -877,7 +885,7 @@ const ui = {
             const profile = engine.getPlayerProfile(v.owner);
             ctx.fillStyle = profile ? profile.color : '#888'; // Default grey if missing
 
-            ctx.fillRect(mx, my, 2, 2);
+            ctx.fillRect(mx, my, 2.2, 2.2);
         });
 
         // 3. Draw Viewport Rectangle
@@ -1056,12 +1064,15 @@ const ui = {
 
         // 3. Build HTML Table
         let html = `
+    <div style="padding:10px; font-weight:bold; font-size:14px; border-bottom:1px solid #ccc;">
+        🏆 World Leaderboard
+    </div>
     <table class="rank-table">
         <thead>
             <tr>
                 <th style="width:10%">#</th>
                 <th style="width:40%">Name</th>
-                <th style="width:15%">Villages</th>
+                <th style="width:15%">Vil</th>
                 <th style="width:35%">Points</th>
             </tr>
         </thead>
@@ -1070,15 +1081,16 @@ const ui = {
 
         scores.forEach((s, index) => {
             const isMe = s.id === 'player';
-            let rowClass = "";
-            if (isMe) rowClass = "rank-row-player";
-            else if (!s.alive) rowClass = "rank-row-dead";
+            let rowClass = "rank-row-clickable "; // Add clickable class
+            if (isMe) rowClass += "rank-row-player";
+            else if (!s.alive) rowClass += "rank-row-dead";
 
             const dot = `<span class="rank-dot" style="background:${s.color}"></span>`;
             const nameDisplay = isMe ? `${dot} ${s.name} (You)` : `${dot} ${s.name}`;
 
+            // ADD ONCLICK HERE:
             html += `
-        <tr class="${rowClass}">
+        <tr class="${rowClass}" onclick="ui.showPlayerVillages('${s.id}')">
             <td>${index + 1}</td>
             <td>${nameDisplay}</td>
             <td>${s.villages}</td>
@@ -1102,7 +1114,7 @@ const ui = {
 
     openMarketModal: function (targetId) {
         const v = engine.getCurrentVillage();
-const tId = Number(targetId); 
+        const tId = Number(targetId);
         const targetV = state.villages.find(vil => vil.id === tId);
 
         // Safety debug: If this logs "Target not found", you know the ID is still wrong
@@ -1162,5 +1174,73 @@ const tId = Number(targetId);
         else if (type === 'clay') stock = Math.floor(v.res[1]);
         else if (type === 'iron') stock = Math.floor(v.res[2]);
         document.getElementById('market-' + type).value = Math.min(stock, remainingCap);
+    },
+    showPlayerVillages: function (playerId) {
+        const container = document.getElementById('ranking-list');
+
+        // 1. Get Player Data
+        const profile = engine.getPlayerProfile(playerId);
+        const villages = state.villages.filter(v => v.owner === playerId);
+
+        // Sort villages by points (highest first)
+        villages.sort((a, b) => b.points - a.points);
+
+        // 2. Build Header (Name & Back Button)
+        let html = `
+        <div style="display:flex; align-items:center; padding:10px; border-bottom:1px solid #ccc; background:#f9f9f9;">
+            <button class="btn-mini" onclick="ui.renderRankingTab()" style="margin-right:10px;">⬅️ Back</button>
+            <div>
+                <div style="font-weight:bold; color:${profile.color}; font-size:14px;">${profile.name}</div>
+                <div style="font-size:11px; color:#666;">
+                    Total Villages: ${villages.length} | Status: ${profile.alive ? 'Alive' : 'Defeated'}
+                </div>
+            </div>
+        </div>
+        <div style="height:400px; overflow-y:auto;">
+            <table class="rank-table">
+                <thead>
+                    <tr>
+                        <th>Village Name</th>
+                        <th>Coords</th>
+                        <th>Points</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+        // 3. List Villages
+        if (villages.length === 0) {
+            html += `<tr><td colspan="4" style="text-align:center; padding:20px;">This player has no villages left.</td></tr>`;
+        } else {
+            villages.forEach(v => {
+                html += `
+            <tr>
+                <td>${v.name}</td>
+                <td>(${v.x}|${v.y})</td>
+                <td>${v.points.toLocaleString()}</td>
+                <td style="text-align:center;">
+                    <button class="btn-mini btn-blue" onclick="ui.jumpToVillage(${v.x}, ${v.y})">👀 View</button>
+                </td>
+            </tr>`;
+            });
+        }
+
+        html += `</tbody></table></div>`;
+        container.innerHTML = html;
+    },
+
+    jumpToVillage: function (x, y) {
+        // 1. Update Map View Coordinates
+        state.mapView = { x: x, y: y };
+
+        // 2. Switch to Map Tab using your existing system
+        // We pass the button element as null since we are doing it programmatically
+        ui.showTab('map', document.querySelector('button[onclick*="map"]'));
+
+        // 3. Highlight the specific tile (Optional UX touch)
+        // We can rely on the renderMap center highlight, 
+        // or add a temporary flash effect if you like.
+        console.log(`Jumping to ${x},${y}`);
     },
 };
