@@ -32,7 +32,7 @@ const ui = {
 
     updateInterfaceText: function () {
         const mapping = {
-            'tab-hq': 'tab_hq', 'tab-recruit': 'tab_recruit', 'tab-map': 'tab_map', 'tab-reports': 'tab_reports', 'tab-settings': 'tab_settings',
+            'tab-hq': 'tab_hq', 'tab-recruit': 'tab_recruit', 'tab-map': 'tab_map', 'tab-reports': 'tab_reports', 'tab-settings': 'tab_settings', 'tab-rankings': 'tab_rankings',
             'btn-return-home': 'btn_return', 'btn-clear-history': 'btn_clear', 'header-language': 'header_lang',
             'header-debug': 'header_debug', 'header-cheat': 'header_cheat', 'header-save': 'header_save',
             'btn-download': 'btn_download', 'btn-wipe': 'btn_wipe', 'btn-close-build': 'btn_close'
@@ -46,11 +46,29 @@ const ui = {
     centerMapOnVillage: function () { const v = engine.getCurrentVillage(); state.mapView.x = v.x; state.mapView.y = v.y; ui.renderMap(); },
 
     showTab: function (id, btn) {
+        // 1. Reset all tabs
         document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
         document.querySelectorAll('.tab-btn').forEach(e => e.classList.remove('active'));
-        document.getElementById(id).classList.add('active');
-        btn.classList.add('active');
-        if (id === 'map') ui.renderMap();
+
+        // 2. Activate the selected tab
+        // Try finding ID directly, otherwise try adding 'tab-' prefix (common pattern)
+        let target = document.getElementById(id);
+        if (!target) target = document.getElementById('tab-' + id);
+
+        if (target) target.classList.add('active');
+        if (btn) btn.classList.add('active');
+
+        // 3. Update global state (useful for the game loop to know what to render)
+        ui.activeTab = id;
+
+        // 4. Specific Render Logic
+        if (id === 'map') {
+            ui.renderMap();
+        }
+        else if (id === 'rankings') {
+            ui.renderRankingTab(); // <--- Added this hook
+        }
+
         ui.refresh();
     },
 
@@ -323,6 +341,7 @@ const ui = {
 
     openAttackModal: function (t) {
         let target = t;
+        // Attempt to find real village data in state
         if (t.id) {
             const found = state.villages.find(v => v.id === t.id);
             if (found) target = found;
@@ -330,96 +349,112 @@ const ui = {
 
         ui.selTile = target;
         const v = engine.getCurrentVillage();
-        const owner = target.owner || target.type;
-        const isMyVillage = owner === 'player' && state.villages.some(vil => vil.id === target.id);
 
-        // 1. Build Unit Inputs with 'oninput' trigger
-        let html = `<div style="margin-bottom:10px; font-weight:bold; text-align:right;">
-                        ⏱️ ${T('duration')}: <span id="attack-duration">--:--:--</span>
-                    </div>`;
+        // Determine Ownership & Profile
+        const ownerId = target.owner || target.type; // e.g. 'player', 'barbarian', 'ai_1'
+        const isMyVillage = ownerId === 'player' && state.villages.some(vil => vil.id === target.id);
+        const profile = engine.getPlayerProfile(ownerId); // Get AI Name/Color
 
-        // Sort units by speed (optional, but looks nice)
+        // 1. Build Header Info (Owner Stats)
+        const globalScore = engine.getGlobalScore(ownerId);
+        const statusText = !profile.alive ? ` <span style="color:red; font-size:10px;">(DEFEATED)</span>` : "";
+
+        let html = `
+        <div style="background:#f4f4f4; padding:5px; margin-bottom:10px; border-bottom:1px solid #ccc; font-size:11px;">
+            <div style="display:flex; justify-content:space-between;">
+                <span><b>Owner:</b> <span style="color:${profile.color}">${profile.name}</span>${statusText}</span>
+                <span><b>Points:</b> ${target.points || 0}</span>
+            </div>
+            ${ownerId !== 'player' && ownerId !== 'barbarian' ? `<div style="color:#666; margin-top:2px;">Empire Score: ${globalScore.toLocaleString()} pts</div>` : ''}
+        </div>
+        <div style="margin-bottom:10px; font-weight:bold; text-align:right;">
+            ⏱️ ${T('duration')}: <span id="attack-duration">--:--:--</span>
+        </div>`;
+
+        // 2. Build Unit Inputs
+        // Sort units by speed (fastest first usually helps, or slowest to see bottleneck)
         const unitKeys = Object.keys(v.units).filter(u => v.units[u] > 0);
 
         if (unitKeys.length === 0) {
-            html = T('noTroops');
+            html += `<div style="padding:10px; color:#999; text-align:center;">${T('noTroops')}</div>`;
         } else {
             unitKeys.forEach(u => {
+                const speed = DB.units[u].spd; // Updated from 'spd' to 'speed'
                 html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
-                    <div style="width:100px;">
-                        ${T_Name(u)} <span style="font-size:10px; color:#666">(${v.units[u]})</span><br>
-                        <span style="font-size:9px;">🏃 ${DB.units[u].spd}</span>
-                    </div>
-                    <div class="input-group">
-                        <input type="number" id="atk-${u}" max="${v.units[u]}" value="0" style="width:50px" oninput="ui.updateTravelTime()">
-                        <button class="btn-mini" onclick="document.getElementById('atk-${u}').value = ${v.units[u]}; ui.updateTravelTime();">${T('max')}</button>
-                    </div>
-                </div>`;
+                <div style="width:110px;">
+                    <b>${T_Name(u)}</b> <span style="font-size:10px; color:#666">(${v.units[u]})</span><br>
+                    <span style="font-size:9px;">🏃 ${speed} m/tile</span>
+                </div>
+                <div class="input-group">
+                    <input type="number" id="atk-${u}" max="${v.units[u]}" value="0" style="width:50px" oninput="ui.updateTravelTime()">
+                    <button class="btn-mini" onclick="document.getElementById('atk-${u}').value = ${v.units[u]}; ui.updateTravelTime();">${T('max')}</button>
+                </div>
+            </div>`;
             });
         }
 
+        // 3. Recent Reports (Intel)
         if (state.reports) {
             const recent = state.reports.filter(r =>
-                r.targetId === target.id &&
-                r.missionType === 'attack'
-            ).slice(0, 5); // Show max 5
+                r.targetId === target.id && r.missionType === 'attack'
+            ).slice(0, 5);
 
             if (recent.length > 0) {
                 html += `<div style="margin-top:15px; padding-top:10px; border-top:1px solid #ddd;">
-                    <div style="font-size:11px; font-weight:bold; color:#555; margin-bottom:5px;">📋 ${T('recent_reports') || "Recent Attacks"}</div>
-                    <table style="width:100%; font-size:10px; border-collapse:collapse;">`;
+                <div style="font-size:11px; font-weight:bold; color:#555; margin-bottom:5px;">📋 ${T('recent_reports') || "Recent Attacks"}</div>
+                <table style="width:100%; font-size:10px; border-collapse:collapse;">`;
 
                 recent.forEach(r => {
-                    // Dot Color: Green = Win, Red = Loss
                     const dot = r.type === 'win' ? '🟢' : '🔴';
                     html += `
-                    <tr style="border-bottom:1px solid #eee;">
-                        <td style="padding:2px 5px;">${dot}</td>
-                        <td style="padding:2px;">${r.title}</td>
-                        <td style="padding:2px; text-align:right; color:#888;">${r.time}</td>
-                    </tr>`;
+                <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:2px 5px;">${dot}</td>
+                    <td style="padding:2px;">${r.title}</td>
+                    <td style="padding:2px; text-align:right; color:#888;">${r.time}</td>
+                </tr>`;
                 });
                 html += `</table></div>`;
             }
         }
 
+        // 4. Modal Title
         const coords = (target.x !== undefined && target.y !== undefined) ? `(${target.x}|${target.y})` : "";
         const titleText = isMyVillage
-            ? `${target.name} ${coords} - ${T('village')}`
+            ? `${target.name} ${coords}`
             : `${T('target')}: ${target.name} ${coords}`;
 
         document.getElementById('a-modal-title').innerText = titleText;
         document.getElementById('a-modal-units').innerHTML = html;
 
+        // 5. Action Buttons
         const footer = document.querySelector('#attack-modal .modal-actions');
         const marketLvl = v.buildings["Market"] || 0;
         const resBtn = marketLvl > 0
-            ? `<button class="btn btn-blue" onclick="ui.closeAttackModal(); ui.openMarketModal(${target.id})">💰 ${T('transport')}</button>`
+            ? `<button class="btn btn-blue" onclick="ui.closeAttackModal(); ui.openMarketModal('${target.id}')">💰 ${T('transport')}</button>`
             : '';
 
-        // Button Logic
         let buttons = `<button class="btn btn-red" onclick="ui.closeAttackModal()">${T('btn_cancel')}</button>`;
 
         if (isMyVillage) {
-            buttons += `<button class="btn" onclick="ui.switchVillage(${target.id}); ui.closeAttackModal(); ui.showTab('hq', document.querySelector('.tab-btn'));">${T('village')}</button>`;
+            buttons += `<button class="btn" onclick="ui.switchVillage('${target.id}'); ui.closeAttackModal(); ui.showTab('hq', document.querySelector('.tab-btn'));">${T('btn_return') || "Enter Village"}</button>`;
         } else {
             buttons += `<button class="btn" onclick="game.launchAttack('attack')">⚔️ ${T('attack')}</button>`;
         }
 
+        // Support is always available (even to self or enemies)
         buttons += `<button class="btn btn-blue" onclick="game.launchAttack('support')">🛡️ ${T('support')}</button>`;
         buttons += resBtn;
 
         footer.innerHTML = buttons;
         document.getElementById('attack-modal').style.display = 'flex';
 
-        // Reset timer display
         ui.updateTravelTime();
     },
 
     // --- NEW HELPER: Update Time Display ---
     updateTravelTime: function () {
         const display = document.getElementById('attack-duration');
-        
+
         if (!display) return;
 
         const origin = engine.getCurrentVillage();
@@ -759,20 +794,46 @@ const ui = {
         document.getElementById('map-center-coords').innerText = `${cx}|${cy}`;
         const grid = document.getElementById('map-grid');
         grid.innerHTML = "";
+
         engine.generateMapChunk(cx, cy);
+
         for (let y = cy - 7; y <= cy + 7; y++) {
             for (let x = cx - 7; x <= cx + 7; x++) {
-                const t = state.mapData[`${x},${y}`];
+                let t = state.villages.find(v => v.x === x && v.y === y);
+                if (!t) t = state.mapData[`${x},${y}`];
+
                 const d = document.createElement('div');
                 d.className = "tile";
+
                 if (t && t.type !== "empty") {
-                    d.classList.add(t.type);
-                    const pts = t.points ? `\n<span style='font-size:7px'>${t.points}</span>` : "";
-                    const icon = t.type === "player" ? "🏰" : (t.type === "enemy" ? "🏯" : "🛖");
+                    // 1. Get Owner & Profile
+                    const ownerId = t.owner || (t.type === 'player' ? 'player' : 'barbarian');
+                    const profile = engine.getPlayerProfile(ownerId);
+                    const color = profile ? profile.color : '#bdbdbd';
+
+                    // 2. APPLY BACKGROUND COLOR (Replaces your CSS classes)
+                    d.style.background = color;
+                    d.style.border = "1px solid rgba(0,0,0,0.2)"; // Slight border for definition
+
+                    // 3. Icon & Name
+                    let icon = "🛖";
+                    if (ownerId === 'player') icon = "🏰";
+                    else if (ownerId.startsWith('ai_')) icon = "🏯";
+
                     let displayName = T_Name(t.name);
                     if (!STRINGS[LANG][t.name]) displayName = t.name;
 
-                    d.innerHTML = `${icon}<div class="tile-name">${displayName}</div>${pts}`;
+                    const pts = t.points ? `\n<span style='font-size:9px; opacity:0.8'>${t.points}</span>` : "";
+
+                    // Text is now White with Shadow for readability on colored backgrounds
+                    d.innerHTML = `
+                    <div style="font-size:16px; margin-top:2px;">${icon}</div>
+                    <div class="tile-name" style="color:white; text-shadow:1px 1px 0 #000; font-weight:bold;">
+                        ${displayName}
+                    </div>
+                    ${pts}
+                `;
+
                     d.onclick = (e) => {
                         e.stopPropagation();
                         if (t.id === engine.getCurrentVillage().id) {
@@ -782,7 +843,12 @@ const ui = {
                         ui.openAttackModal(t);
                     };
                 }
-                if (x === cx && y === cy) d.style.border = "2px solid yellow";
+
+                if (x === cx && y === cy) {
+                    d.style.border = "2px solid yellow";
+                    d.style.boxShadow = "0 0 10px yellow"; // Stronger highlight for selected
+                }
+
                 grid.appendChild(d);
             }
         }
@@ -802,19 +868,21 @@ const ui = {
 
         const scale = w / CONFIG.mapSize;
 
-        // 2. Draw Villages
+        // 2. Draw Villages with Dynamic Colors
         state.villages.forEach(v => {
             const mx = v.x * scale;
             const my = v.y * scale;
-            ctx.fillStyle = v.owner === 'player' ? '#FFFF00' : (v.owner === 'enemy' ? '#FF0000' : '#888888');
+
+            // Fetch Profile Color
+            const profile = engine.getPlayerProfile(v.owner);
+            ctx.fillStyle = profile ? profile.color : '#888'; // Default grey if missing
+
             ctx.fillRect(mx, my, 2, 2);
         });
 
         // 3. Draw Viewport Rectangle
-        const viewTiles = 15; // The number of tiles visible in your main map grid
+        const viewTiles = 15;
         const rectSize = viewTiles * scale;
-
-        // Your existing logic implies state.mapView is the CENTER of the view
         const vx = state.mapView.x * scale;
         const vy = state.mapView.y * scale;
 
@@ -822,120 +890,111 @@ const ui = {
         ctx.lineWidth = 1;
         ctx.strokeRect(vx - (rectSize / 2), vy - (rectSize / 2), rectSize, rectSize);
 
-        // --- NEW: CLICK TO NAVIGATE ---
-        // We bind the click event directly to the canvas
+        // 4. Click Navigation Logic
         cvs.onclick = (e) => {
             const rect = cvs.getBoundingClientRect();
-
-            // Get Click Coordinates relative to the canvas
             const clickX = e.clientX - rect.left;
             const clickY = e.clientY - rect.top;
 
-            // Convert Pixel -> Map Coordinate
-            // Since state.mapView represents the CENTER, we just set it directly
             let newX = Math.floor(clickX / scale);
             let newY = Math.floor(clickY / scale);
 
-            // Clamp to map bounds so you don't scroll into the void
-            // (Optional: Keeps the center somewhat inside the map)
             newX = Math.max(0, Math.min(CONFIG.mapSize, newX));
             newY = Math.max(0, Math.min(CONFIG.mapSize, newY));
 
-            // Update State
             state.mapView.x = newX;
             state.mapView.y = newY;
 
-            // Refresh Displays
-            ui.renderMap();      // Renders the main grid
-            ui.renderMinimap();  // Re-renders this minimap (moves the white box)
+            ui.renderMap();
+            ui.renderMinimap();
         };
     },
 
-updateMissions: function () {
-    const el = document.getElementById('active-missions');
-    if (!el) return;
+    updateMissions: function () {
+        const el = document.getElementById('active-missions');
+        if (!el) return;
 
-    const v = engine.getCurrentVillage();
-    if (!v) return;
+        const v = engine.getCurrentVillage();
+        if (!v) return;
 
-    // 1. FILTER: Only show missions involving THIS village (as Origin or Target)
-    const relevantMissions = state.missions.filter(m => 
-        m.originId === v.id || m.targetId === v.id
-    );
+        // 1. FILTER: Only show missions involving THIS village (as Origin or Target)
+        const relevantMissions = state.missions.filter(m =>
+            m.originId === v.id || m.targetId === v.id
+        );
 
-    // 2. SORT: By arrival time
-    const sortedMissions = relevantMissions.sort((a, b) => a.arrival - b.arrival);
+        // 2. SORT: By arrival time
+        const sortedMissions = relevantMissions.sort((a, b) => a.arrival - b.arrival);
 
-    el.innerHTML = sortedMissions.map(m => {
-        const ms = Math.max(0, m.arrival - Date.now());
-        const timeStr = formatTime(ms);
-        
-        // Helpers to resolve names
-        const getV = (id) => state.villages.find(vil => vil.id === id);
-        const originV = getV(m.originId);
-        const targetV = getV(m.targetId);
-        
-        const originName = originV ? `${originV.name} (${originV.x}|${originV.y})` : "Unknown";
-        const targetName = targetV ? `${targetV.name} (${targetV.x}|${targetV.y})` : "Unknown";
+        el.innerHTML = sortedMissions.map(m => {
+            const ms = Math.max(0, m.arrival - Date.now());
+            const timeStr = formatTime(ms);
 
-        // Directions
-        const isIncoming = m.targetId === v.id; // It is coming TO us
-        const isReturn = m.type === 'return';
+            // Helpers to resolve names
+            const getV = (id) => state.villages.find(vil => vil.id === id);
+            const originV = getV(m.originId);
+            const targetV = getV(m.targetId);
 
-        let text = "", colorClass = "", icon = "";
+            const originName = originV ? `${originV.name} (${originV.x}|${originV.y})` : "Unknown";
+            const targetName = targetV ? `${targetV.name} (${targetV.x}|${targetV.y})` : "Unknown";
 
-        // --- DISPLAY LOGIC ---
+            // Directions
+            const isIncoming = m.targetId === v.id; // It is coming TO us
+            const isReturn = m.type === 'return';
 
-        if (m.type === 'attack') {
-            if (isIncoming) {
-                // DANGER: We are being attacked!
-                text = `<b>${T('incoming')}</b> ${T('from')} <br>⚔️ ${originName}`;
-                colorClass = "mission-incoming"; 
-                icon = "🚨";
-            } else {
-                // OUTGOING: We are attacking someone
-                text = `${T('attack')} ➔ ${targetName}`;
-                colorClass = "mission-attack"; 
-                icon = "⚔️";
-            }
-        } 
-        else if (m.type === 'support') {
-            if (isIncoming) {
-                if (isReturn) {
-                    // Logic catch: Returns are usually type='return', but just in case
-                    text = `${T('return')} ${T('from')} ${originName}`;
-                    colorClass = "mission-return"; 
-                    icon = "🔙";
+            let text = "", colorClass = "", icon = "";
+
+            // --- DISPLAY LOGIC ---
+
+            if (m.type === 'attack') {
+                if (isIncoming) {
+                    // DANGER: We are being attacked!
+                    text = `<b>${T('incoming')}</b> ${T('from')} <br>⚔️ ${originName}`;
+                    colorClass = "mission-incoming";
+                    icon = "🚨";
                 } else {
-                    text = `${T('support')} ${T('from')} <br>🛡️ ${originName}`;
-                    colorClass = "mission-support"; 
+                    // OUTGOING: We are attacking someone
+                    text = `${T('attack')} ➔ ${targetName}`;
+                    colorClass = "mission-attack";
+                    icon = "⚔️";
+                }
+            }
+            else if (m.type === 'support') {
+                if (isIncoming) {
+                    if (isReturn) {
+                        // Logic catch: Returns are usually type='return', but just in case
+                        text = `${T('return')} ${T('from')} ${originName}`;
+                        colorClass = "mission-return";
+                        icon = "🔙";
+                    } else {
+                        text = `${T('support')} ${T('from')} <br>🛡️ ${originName}`;
+                        colorClass = "mission-support";
+                        icon = "🛡️";
+                    }
+                } else {
+                    text = `${T('support')} ➔ ${targetName}`;
+                    colorClass = "mission-support";
                     icon = "🛡️";
                 }
-            } else {
-                text = `${T('support')} ➔ ${targetName}`;
-                colorClass = "mission-support"; 
-                icon = "🛡️";
             }
-        } 
-        else if (m.type === 'transport') {
-            if (isIncoming) {
-                text = `${T('transport')} ${T('from')} <br>💰 ${originName}`;
-                colorClass = "mission-transport"; 
-                icon = "📦";
-            } else {
-                text = `${T('transport')} ➔ ${targetName}`;
-                colorClass = "mission-transport"; 
-                icon = "💰";
+            else if (m.type === 'transport') {
+                if (isIncoming) {
+                    text = `${T('transport')} ${T('from')} <br>💰 ${originName}`;
+                    colorClass = "mission-transport";
+                    icon = "📦";
+                } else {
+                    text = `${T('transport')} ➔ ${targetName}`;
+                    colorClass = "mission-transport";
+                    icon = "💰";
+                }
             }
-        } 
-        else if (m.type === 'return') {
-            // Returns always come home (Incoming)
-            text = `${T('return')} ${T('from')} <br>${originName}`; // Or "Return from Target" depending on how you stored logic
-            colorClass = "mission-return"; 
-            icon = "🔙";
-        }
+            else if (m.type === 'return') {
+                // Returns always come home (Incoming)
+                text = `${T('return')} ${T('from')} <br>${originName}`; // Or "Return from Target" depending on how you stored logic
+                colorClass = "mission-return";
+                icon = "🔙";
+            }
 
-        return `
+            return `
         <div class="mission-card ${colorClass}">
             <div class="m-icon">${icon}</div>
             <div class="m-info">
@@ -943,12 +1002,97 @@ updateMissions: function () {
                 <div class="m-timer">${timeStr}</div>
             </div>
         </div>`;
-    }).join('');
-    
-    if (sortedMissions.length === 0) {
-        el.innerHTML = `<div style="padding:10px; color:#999; text-align:center; font-size:11px;">${T('no_missions') || "No active movements"}</div>`;
-    }
-},
+        }).join('');
+
+        if (sortedMissions.length === 0) {
+            el.innerHTML = `<div style="padding:10px; color:#999; text-align:center; font-size:11px;">${T('no_missions') || "No active movements"}</div>`;
+        }
+    },
+
+    // Add to your ui object
+    renderRankingTab: function () {
+        const container = document.getElementById('ranking-list');
+        if (!container) return;
+
+        // 1. Calculate Scores
+        const scores = [];
+        const profiles = state.playerProfiles || {};
+
+        // Initialize scores for all known profiles (except Barbarians usually)
+        for (let id in profiles) {
+            if (id === 'barbarian') continue; // Skip barbs in ranking
+            scores.push({
+                id: id,
+                name: profiles[id].name,
+                color: profiles[id].color,
+                alive: profiles[id].alive,
+                points: 0,
+                villages: 0
+            });
+        }
+
+        // Sum up points from the map
+        state.villages.forEach(v => {
+            const owner = v.owner || 'barbarian';
+            const entry = scores.find(s => s.id === owner);
+            if (entry) {
+                entry.points += (v.points || 0);
+                entry.villages++;
+            }
+        });
+
+        scores.forEach(s => {
+            if (s.id !== 'player' && s.alive && s.villages === 0) {
+                s.alive = false;
+                if (state.playerProfiles[s.id]) state.playerProfiles[s.id].alive = false; // Update state too
+            }
+        });
+
+        // 2. Sort: Active Players > Points > Villages
+        scores.sort((a, b) => {
+            if (a.alive !== b.alive) return b.alive ? 1 : -1; // Dead players at bottom
+            return b.points - a.points; // High score top
+        });
+
+        // 3. Build HTML Table
+        let html = `
+    <table class="rank-table">
+        <thead>
+            <tr>
+                <th style="width:10%">#</th>
+                <th style="width:40%">Name</th>
+                <th style="width:15%">Villages</th>
+                <th style="width:35%">Points</th>
+            </tr>
+        </thead>
+        <tbody>
+    `;
+
+        scores.forEach((s, index) => {
+            const isMe = s.id === 'player';
+            let rowClass = "";
+            if (isMe) rowClass = "rank-row-player";
+            else if (!s.alive) rowClass = "rank-row-dead";
+
+            const dot = `<span class="rank-dot" style="background:${s.color}"></span>`;
+            const nameDisplay = isMe ? `${dot} ${s.name} (You)` : `${dot} ${s.name}`;
+
+            html += `
+        <tr class="${rowClass}">
+            <td>${index + 1}</td>
+            <td>${nameDisplay}</td>
+            <td>${s.villages}</td>
+            <td>${s.points.toLocaleString()}</td>
+        </tr>`;
+        });
+
+        if (scores.length === 0) {
+            html += `<tr><td colspan="4" style="text-align:center; padding:20px;">No players found.</td></tr>`;
+        }
+
+        html += `</tbody></table>`;
+        container.innerHTML = html;
+    },
 
     renderReports: function () { document.getElementById('report-list').innerHTML = state.reports.map((r, i) => `<div class="report-item report-${r.type}" onclick="ui.openReport(${i})"><span>${r.title}</span><span>${r.time}</span></div>`).join(''); },
     openReport: function (i) { document.getElementById('r-modal-content').innerHTML = state.reports[i].content; document.getElementById('report-modal').style.display = 'flex'; },
@@ -958,9 +1102,16 @@ updateMissions: function () {
 
     openMarketModal: function (targetId) {
         const v = engine.getCurrentVillage();
+const tId = Number(targetId); 
+        const targetV = state.villages.find(vil => vil.id === tId);
+
+        // Safety debug: If this logs "Target not found", you know the ID is still wrong
+        if (!targetV) {
+            console.error("Market Target not found:", targetId);
+            return;
+        }
         const marketLvl = v.buildings["Market"] || 0;
         const maxCap = marketLvl * CONFIG.marketCapacityPerLevel;
-        const targetV = state.villages.find(vil => vil.id === targetId);
         if (!targetV) return;
 
         let html = `

@@ -7,14 +7,12 @@ const CONFIG = {
     marketCapacityPerLevel: 1000, // How many resources 1 level can carry
     buildQueueLimit: 5,
     
-    aiGrowthInterval: 100 * 60 * 1000, // Enemies try to build every 2 hours
-    aiGrowthChance: 0.7, // 50% chance to succeed per check
-
     aiAttackEnabled: true,
     aiAttackInterval: 100 * 60 * 1000, // Check for attack every 10 minutes
     aiAttackChance: 0.3, // 30% chance to attack when interval hits
     aiAttackRange: 15, // Max distance tiles
-    aiAttackStrength: 0.4 // Multiplier relative to player points (0.5 = 50% of player strength)
+    aiAttackStrength: 0.4, // Multiplier relative to player points (0.5 = 50% of player strength)
+    aiUpdateInterval: 60 * 60 * 1000, 
 };
 
 // --- HELPER: Time Formatting ---
@@ -45,4 +43,18 @@ function roundNumbers(obj) {
         }
     }
     return obj;
+}
+
+function getRandomColor() {
+    // Generates bright, distinct colors (avoiding darks/blacks)
+    const h = Math.floor(Math.random() * 360);
+    return `hsl(${h}, 70%, 50%)`;
+}
+
+function generateAiName(id) {
+    const prefixes = ["Baron", "Duke", "Warlord", "King", "General", "Lady", "Countess"];
+    const names = ["Kael", "Vesper", "Gorm", "Thorne", "Ivy", "Ash", "Zane", "Mira", "Rex"];
+    const p = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const n = names[Math.floor(Math.random() * names.length)];
+    return `${p} ${n} ${id.split('_')[1]}`; // e.g. "Baron Kael 42"
 }

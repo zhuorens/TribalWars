@@ -204,7 +204,7 @@ const engine = {
             units["Scout"] = r(20, 100);
             if (Math.random() > 0.7) units["Ram"] = r(10, 30);
 
-        } else if (owner === "barb") {
+        } else if (owner === "barbarian") {
             // --- BARB LOGIC (Random, but Weaker than Enemy) ---
             // Resources: 4-10 (Enemy is 10-15)
             builds["Timber Camp"] = r(6, 15);
@@ -244,19 +244,44 @@ const engine = {
     },
 
     generateMapChunk: function (cX, cY) {
+        // Ensure profiles object exists
+        state.playerProfiles = state.playerProfiles || {};
+        // Ensure human player exists
+        if (!state.playerProfiles['player']) {
+            state.playerProfiles['player'] = { name: "You", color: "#FFFF00", alive: true };
+        }
+
         for (let x = cX - 7; x <= cX + 7; x++) {
             for (let y = cY - 7; y <= cY + 7; y++) {
+                // Bounds check
                 if (x < 0 || x > CONFIG.mapSize || y < 0 || y > CONFIG.mapSize) continue;
+                // Already exists check
                 if (state.mapData[`${x},${y}`]) continue;
+                // Don't overwrite the player's start position (assuming 100,100)
                 if (x === 100 && y === 100) continue;
 
                 const r = Math.random();
+
+                // 1. AI WARLORDS (5% Chance)
                 if (r > 0.95) {
-                    const name = engine.generateEnemyName();
-                    state.villages.push(engine.createVillage(x, y, name, "enemy"));
-                } else if (r > 0.85) {
-                    state.villages.push(engine.createVillage(x, y, "Barbarian", "barb"));
-                } else {
+                    // Generate Unique ID (e.g., ai_102)
+                    // We use villages.length to ensure it increments
+                    const aiId = `ai_${state.villages.length}`;
+
+                    // Create their specific Profile (Name + Color)
+                    const profile = engine.getPlayerProfile(aiId);
+
+                    // Create Village owned by this specific AI
+                    state.villages.push(engine.createVillage(x, y, profile.name, aiId));
+                }
+                // 2. BARBARIANS (10% Chance)
+                else if (r > 0.85) {
+                    // Ensure barbarian profile exists
+                    engine.getPlayerProfile('barbarian');
+                    state.villages.push(engine.createVillage(x, y, "Barbarian", "barbarian"));
+                }
+                // 3. EMPTY TILE
+                else {
                     state.mapData[`${x},${y}`] = { type: "empty" };
                 }
             }
@@ -289,11 +314,17 @@ const engine = {
 
     tick: function () {
         const now = Date.now();
+
+        // 1. Run World Simulation (AI Growth/Wars)
+        // It has its own internal timer check, so calling it every tick is safe.
+        engine.processAiTurn();
+
         const dt = (now - state.lastTick) / 1000;
         state.lastTick = now;
 
+        // 2. Village Updates (Resources & Queues)
         state.villages.forEach(v => {
-            // --- 1. Resources & Loyalty ---
+            // --- A. Resources & Loyalty ---
             const cap = engine.getStorage(v);
             const wood = (60 * Math.pow(1.16, v.buildings["Timber Camp"])) / 3600 * dt;
             const clay = (60 * Math.pow(1.16, v.buildings["Clay Pit"])) / 3600 * dt;
@@ -305,51 +336,36 @@ const engine = {
 
             if (v.loyalty < 100) v.loyalty = Math.min(100, v.loyalty + (dt / 3600));
 
-            // --- 2. Building & Research Queues (Batch Finish) ---
-            // These complete ONLY when the full duration is done
+            // --- B. Queues (Batch Finish) ---
             const processStandardQ = (type, action) => {
                 const q = v.queues[type];
                 if (q.length === 0) return;
 
-                // 1. Initial Start (Cold Start)
-                // If the very first item has no finish time, start it now.
-                if (!q[0].finish) {
-                    q[0].finish = now + q[0].duration;
-                }
+                // Cold Start
+                if (!q[0].finish) q[0].finish = now + q[0].duration;
 
-                // 2. The "Catch Up" Loop
-                // We check repeatedly in case multiple items finished while offline.
+                // Catch Up Loop
                 while (q.length > 0 && now >= q[0].finish) {
-
                     const item = q[0];
-                    const previousFinishTime = item.finish; // Save exactly when this finished
+                    const previousFinishTime = item.finish;
 
-                    // Execute the Action
                     action(item);
-
-                    // Remove from Queue
                     q.shift();
 
-                    // Update Points (if it was a building)
                     if (type === 'build') {
                         v.points = engine.calculatePoints(v);
                         if (state.mapData[`${v.x},${v.y}`]) state.mapData[`${v.x},${v.y}`].points = v.points;
                     }
 
-                    // 3. Chain the Next Item
-                    // The next item starts exactly when the previous one finished.
+                    // Chain Next
                     if (q.length > 0) {
-                        // Set next item's finish time based on PREVIOUS item's finish time
                         q[0].finish = previousFinishTime + q[0].duration;
-
-                        // Optional: Ripple update the rest of the queue to keep timestamps clean
-                        // (Ensures Item 3 knows Item 2's schedule changed)
+                        // Ripple update
                         for (let i = 1; i < q.length; i++) {
                             q[i].finish = q[i - 1].finish + q[i].duration;
                         }
                     }
 
-                    // Triggers for every single completion
                     ui.refresh();
                     requestAutoSave();
                 }
@@ -361,36 +377,24 @@ const engine = {
                 v.techs[item.unit] = (v.techs[item.unit] || 1) + 1;
             });
 
-            // --- 3. Unit Queues (Continuous Production) ---
-            // These produce 1 unit at a time
+            // --- C. Unit Queues ---
             ['barracks', 'stable', 'workshop', 'academy'].forEach(qType => {
                 const q = v.queues[qType];
                 if (!q || q.length === 0) return;
 
                 let active = q[0];
+                if (active.finish === null || active.finish === undefined) active.finish = now + active.unitTime;
 
-                // Initialize start time if new
-                if (active.finish === null || active.finish === undefined) {
-                    active.finish = now + active.unitTime;
-                }
-
-                // Catch-up Loop: Process all units that finished since last tick
                 let unitsProduced = false;
                 while (active && now >= active.finish) {
-                    // A. Produce Unit
                     if (!v.units[active.unit]) v.units[active.unit] = 0;
                     v.units[active.unit]++;
                     unitsProduced = true;
-
-                    // B. Decrement Count
                     active.count--;
 
-                    // C. Check if Batch Complete
                     if (active.count <= 0) {
-                        q.shift(); // Remove batch
-
+                        q.shift();
                         if (q.length > 0) {
-                            // Start next batch immediately (preserve time overflow)
                             const next = q[0];
                             next.finish = active.finish + next.unitTime;
                             active = next;
@@ -398,7 +402,6 @@ const engine = {
                             active = null;
                         }
                     } else {
-                        // Batch continues: Set time for NEXT unit
                         active.finish += active.unitTime;
                     }
                 }
@@ -409,46 +412,8 @@ const engine = {
             });
         });
 
-        // --- 4. AI Growth ---
-        if (!state.nextAiGrowth) state.nextAiGrowth = now + CONFIG.aiGrowthInterval;
-        if (now > state.nextAiGrowth) {
-            state.nextAiGrowth = now + CONFIG.aiGrowthInterval;
-            state.villages.forEach(v => {
-                if (v.owner === 'enemy' || v.owner === 'barb') {
-                    if (Math.random() < CONFIG.aiGrowthChance) {
-                        const bKeys = Object.keys(v.buildings);
-                        const randBuild = bKeys[Math.floor(Math.random() * bKeys.length)];
-
-                        // Get the specific max level for this building from the Database
-                        const buildingDef = DB.buildings[randBuild];
-                        const maxLvl = buildingDef ? buildingDef.maxLevel : 30; // Default to 30 if missing
-
-                        if (v.buildings[randBuild] < maxLvl) {
-                            v.buildings[randBuild]++;
-                            v.points = engine.calculatePoints(v);
-                            if (state.mapData[`${v.x},${v.y}`]) state.mapData[`${v.x},${v.y}`].points = v.points;
-                        }
-                    }
-                    if (v.owner === 'enemy' && Math.random() < 0.3) {
-                        const MAX_AI_UNITS = v.points / 4;
-
-                        const currentSpear = v.units["Spear"] || 0;
-                        const currentSword = v.units["Sword"] || 0;
-
-                        if (currentSpear < MAX_AI_UNITS) {
-                            v.units["Spear"] = currentSpear + 10;
-                        }
-
-                        if (currentSword < MAX_AI_UNITS) {
-                            v.units["Sword"] = currentSword + 10;
-                        }
-                    }
-                }
-            });
-            if (document.getElementById('map').classList.contains('active')) ui.renderMap();
-        }
-
-        // --- 5. AI Attacks ---
+        // --- 3. AI Attacks (Player Harassment) ---
+        // This targets the PLAYER specifically, separate from World Simulation
         if (CONFIG.aiAttackEnabled) {
             if (!state.nextAiCheck) state.nextAiCheck = now + CONFIG.aiAttackInterval;
             if (now > state.nextAiCheck) {
@@ -459,13 +424,123 @@ const engine = {
             }
         }
 
-        // --- 6. Missions ---
+        // --- 4. Missions ---
         state.missions = state.missions.filter(m => {
             if (now >= m.arrival) { engine.resolveMission(m); return false; }
             return true;
         });
 
         ui.updateLoop();
+    },
+
+    processAiTurn: function () {
+        const now = Date.now();
+        if (!state.lastAiUpdate) {
+            state.lastAiUpdate = now;
+            return;
+        }
+        if (now - state.lastAiUpdate < CONFIG.aiUpdateInterval) return;
+
+        state.lastAiUpdate = now;
+        console.log("⚔️ Running AI World Simulation...");
+
+        const activeOwners = new Set();
+
+        state.villages.forEach(v => {
+            const isAi = v.owner.startsWith('ai_');
+            if (isAi) activeOwners.add(v.owner);
+
+            const isBarb = v.owner === 'barbarian';
+
+            // 1. GROWTH (Buildings)
+            if (isAi || isBarb) {
+                const growthChance = isAi ? 0.80 : 0.3; // High chance for active world
+                if (Math.random() < growthChance) {
+                    
+                    // IMPROVEMENT: Filter list to find ONLY valid upgrades
+                    const validUpgrades = Object.keys(DB.buildings).filter(bKey => {
+                        const currentLvl = v.buildings[bKey] || 0;
+                        const maxLvl = DB.buildings[bKey].maxLevel || 30;
+                        return currentLvl < maxLvl;
+                    });
+
+                    // Only proceed if there is something to upgrade
+                    if (validUpgrades.length > 0) {
+                        const randBuild = validUpgrades[Math.floor(Math.random() * validUpgrades.length)];
+                        
+                        v.buildings[randBuild] = (v.buildings[randBuild] || 0) + 1;
+                        v.points = engine.calculatePoints(v);
+                        
+                        // Update Map Cache
+                        if (state.mapData[`${v.x},${v.y}`]) {
+                            state.mapData[`${v.x},${v.y}`].points = v.points;
+                        }
+                    }
+                }
+            }
+
+            // 2. RECRUITMENT (Units) - MOVED FROM TICK
+            // Only AI Warlords build armies (Barbarians are passive farms)
+            if (isAi && Math.random() < 0.3) {
+                const MAX_AI_UNITS = v.points / 3; // Simple cap based on points
+                const currentSpear = v.units["Spear"] || 0;
+                const currentSword = v.units["Sword"] || 0;
+
+                // Add small batches
+                if (currentSpear < MAX_AI_UNITS) v.units["Spear"] = currentSpear + 10;
+                if (currentSword < MAX_AI_UNITS) v.units["Sword"] = currentSword + 10;
+
+                // Occasional Offensive Units
+                if (v.buildings["Stable"] > 0) {
+                    v.units["Light Cav"] = (v.units["Light Cav"] || 0) + 2;
+                }
+            }
+
+            // 3. CONQUEST (The Dice Roll)
+            if (isAi && Math.random() < 0.05) {
+                const range = 7;
+                const targets = state.villages.filter(t =>
+                    Math.abs(t.x - v.x) <= range &&
+                    Math.abs(t.y - v.y) <= range &&
+                    t.id !== v.id &&
+                    t.owner !== v.owner &&
+                    t.owner !== 'player' // <--- ADD THIS SAFETY CHECK
+                );
+
+                if (targets.length > 0) {
+                    const target = targets[Math.floor(Math.random() * targets.length)];
+
+                    const attScore = v.points * (0.8 + Math.random());
+                    const wallLvl = target.buildings["Wall"] || 0;
+                    const wallBonus = 1 + (wallLvl * 0.1);
+                    const defScore = target.points * wallBonus;
+
+                    if (attScore > defScore) {
+                        // Success
+                        const winnerId = v.owner;
+                        target.owner = winnerId;
+                        target.loyalty = 25;
+                        target.buildings["Wall"] = Math.max(0, wallLvl - 2);
+
+                        // Recalculate points for target just in case
+                        target.points = engine.calculatePoints(target);
+                    }
+                }
+            }
+        });
+
+        // 4. ELIMINATION CHECK
+        for (let id in state.playerProfiles) {
+            if (id === 'player' || id === 'barbarian') continue;
+            if (!activeOwners.has(id) && state.playerProfiles[id].alive) {
+                state.playerProfiles[id].alive = false;
+            }
+        }
+
+        if (document.getElementById('map').classList.contains('active')) {
+            ui.renderMap();
+            ui.renderMinimap();
+        }
     },
 
     resolveMission: function (m) {
@@ -490,12 +565,12 @@ const engine = {
                 this.handleAttack(m, origin, target);
                 break;
         }
-        
+
         requestAutoSave();
     },
 
     // --- HELPER: REPORTING ---
-    pushReport: function(m, title, type, content) {
+    pushReport: function (m, title, type, content) {
         state.reports.unshift({
             title: title,
             time: new Date().toLocaleDateString() + " " + new Date().toLocaleTimeString(),
@@ -510,7 +585,7 @@ const engine = {
         ui.renderReports();
     },
 
-    formatName: function(v) {
+    formatName: function (v) {
         return v ? `${v.name} (${v.x}|${v.y})` : T('targetVanished');
     },
 
@@ -531,8 +606,7 @@ const engine = {
         if (target.owner === 'player') {
             this.pushReport(m, `💰 Market: ${originName} ➔ ${targetName}`, 'neutral',
                 `<b>${T('from')}:</b> ${originName}<br><b>${T('to')}:</b> ${targetName}<hr>${T('received') || "Received"}: ${resHtml}`);
-        }
-        if (origin && origin.owner === 'player') {
+        } else if (origin && origin.owner === 'player') {
             this.pushReport(m, `💰 Market: ${originName} ➔ ${targetName}`, 'neutral',
                 `<b>${T('from')}:</b> ${originName}<br><b>${T('to')}:</b> ${targetName}<hr>${T('delivered') || "Delivered"}: ${resHtml}`);
         }
@@ -559,7 +633,7 @@ const engine = {
             const targetName = this.formatName(target);
             const icon = m.type === 'return' ? "🔙" : "🛡️";
             const msg = m.type === 'return' ? T('troops_returned') : T('troops_arrived');
-            
+
             this.pushReport(m, `${icon} ${originName} ➔ ${targetName}`, 'neutral',
                 `<b>${T('from')}:</b> ${originName}<br><b>${T('to')}:</b> ${targetName}<hr>${msg}`);
         }
@@ -568,7 +642,7 @@ const engine = {
     // --- HANDLER: ATTACK (Main Battle Logic) ---
     handleAttack: function (m, origin, target) {
         const startAtt = { ...m.units };
-        
+
         // 1. Aggregate Defense
         const defTotal = { ...target.units };
         if (target.stationed) {
@@ -580,7 +654,7 @@ const engine = {
 
         // 2. Calculate Battle Outcome
         const battleResult = this.calculateBattleOutcome(m, origin, target, defTotal);
-        
+
         // 3. Apply Casualties
         this.applyCasualties(m, target, battleResult.lossFactor, battleResult.defLossFactor, battleResult.win);
 
@@ -612,19 +686,19 @@ const engine = {
         const attScouts = m.units["Scout"] || 0;
         const defScouts = defTotal["Scout"] || 0;
         let scoutWin = false;
-        
+
         if (attScouts > 0) {
             let scoutsDied = 0;
             if (defScouts >= attScouts * 2) scoutsDied = attScouts;
             else if (defScouts > 0) scoutsDied = Math.floor(attScouts * Math.pow(defScouts / (attScouts * 2), 1.5));
-            
+
             m.units["Scout"] -= scoutsDied;
             if (m.units["Scout"] > 0) scoutWin = true;
         }
 
         // B. Main Battle Logic
         const otherAttackingUnits = Object.keys(m.units).some(u => u !== "Scout" && m.units[u] > 0);
-        
+
         if (!otherAttackingUnits) {
             return { win: scoutWin, scoutWin, lossFactor: 0, defLossFactor: 0, offInf: 0, offCav: 0, totalOff: 0 };
         }
@@ -658,7 +732,7 @@ const engine = {
             const ramPower = m.units["Ram"] * ramTech;
             effectiveWallLvl = Math.max(0, currentWallLvl - Math.floor(ramPower / 20));
         }
-        
+
         const wallBonus = 1 + (effectiveWallLvl * 0.05);
         const baseDefAdd = effectiveWallLvl * 20;
         defGenTotal = (defGenTotal * wallBonus) + baseDefAdd;
@@ -673,16 +747,16 @@ const engine = {
         const win = totalOff > finalDef;
         const ratio = (totalOff === 0 && finalDef === 0) ? 1 : (win ? (finalDef / totalOff) : (totalOff / finalDef));
         const lossFactor = (totalOff === 0 && finalDef === 0) ? 0 : Math.pow(ratio, 1.5);
-        
-        return { 
-            win, scoutWin, lossFactor, 
+
+        return {
+            win, scoutWin, lossFactor,
             defLossFactor: win ? 1 : lossFactor,
             offInf, offCav, totalOff
         };
     },
 
     // --- SUB-HELPER: CASUALTIES ---
-    applyCasualties: function(m, target, lossFactor, defLossFactor, win) {
+    applyCasualties: function (m, target, lossFactor, defLossFactor, win) {
         // Attacker
         for (let u in m.units) {
             if (u !== "Scout") {
@@ -699,9 +773,9 @@ const engine = {
     },
 
     // --- SUB-HELPER: POST BATTLE ---
-    processPostBattleEvents: function(m, origin, target, result, startAtt) {
+    processPostBattleEvents: function (m, origin, target, result, startAtt) {
         let wallMsg = "", loyaltyMsg = "", lootText = "";
-        let stolen = [0,0,0];
+        let stolen = [0, 0, 0];
 
         // 1. Wall Destruction
         const currentWallLvl = target.buildings["Wall"] || 0;
@@ -729,13 +803,41 @@ const engine = {
             for (let i = 0; i < nobleCount; i++) drop += Math.floor(20 + Math.random() * 16);
             target.loyalty -= drop;
             loyaltyMsg = `<div style="color:blue"><b>${T('loyalty')} ${Math.floor(target.loyalty)}!</b> (-${drop})</div>`;
-            
+
             if (target.loyalty <= 0) {
-                target.owner = "player";
+                const oldOwner = target.owner;
+                const newOwner = origin ? origin.owner : 'player';
+
+                // 1. Change Ownership
+                target.owner = newOwner;
                 target.loyalty = 25;
-                state.mapData[`${target.x},${target.y}`].type = "player";
+
+                // Update Map Data (Visual Type)
+                if (state.mapData[`${target.x},${target.y}`]) {
+                    state.mapData[`${target.x},${target.y}`].type = (newOwner === 'player') ? "player" : "enemy";
+                }
+
+                // Consume Noble
                 m.units["Noble"] = Math.max(0, m.units["Noble"] - 1);
+
                 loyaltyMsg += `<div style="background:gold; color:black; padding:5px; text-align:center; margin-top:5px;"><b>🎉 ${T('conquered')} 🎉</b></div>`;
+
+                // 2. ELIMINATION CHECK
+                // If the loser was an AI Warlord (not Barbarian, not Player)
+                if (oldOwner && oldOwner !== 'barbarian' && oldOwner !== 'player') {
+                    // Check if they have any villages left in the entire world
+                    const survivorVillage = state.villages.find(v => v.owner === oldOwner);
+
+                    if (!survivorVillage) {
+                        // No villages found -> They are dead
+                        if (state.playerProfiles[oldOwner]) {
+                            state.playerProfiles[oldOwner].alive = false;
+                            const deadName = state.playerProfiles[oldOwner].name;
+                            loyaltyMsg += `<div style="color:red; font-weight:bold; text-align:center; margin-top:5px; border:1px solid red; padding:2px;">☠️ ${deadName} Eliminated!</div>`;
+                        }
+                    }
+                }
+
                 if (document.getElementById('map').classList.contains('active')) ui.renderMap();
             }
         }
@@ -744,10 +846,10 @@ const engine = {
         if (result.win || result.scoutWin) {
             let capacity = 0;
             for (let u in m.units) capacity += m.units[u] * DB.units[u].carry;
-            
+
             if (capacity > 0) {
                 while (capacity > 0 && (target.res[0] > 0 || target.res[1] > 0 || target.res[2] > 0)) {
-                    let types = [0,1,2].filter(i => target.res[i] > 0);
+                    let types = [0, 1, 2].filter(i => target.res[i] > 0);
                     if (types.length === 0) break;
                     let share = Math.ceil(capacity / types.length);
                     let taken = 0;
@@ -762,7 +864,7 @@ const engine = {
                     if (taken === 0) break;
                 }
                 if (stolen.some(s => s > 0)) {
-                    if (origin) { origin.res[0]+=stolen[0]; origin.res[1]+=stolen[1]; origin.res[2]+=stolen[2]; }
+                    if (origin) { origin.res[0] += stolen[0]; origin.res[1] += stolen[1]; origin.res[2] += stolen[2]; }
                     lootText = `<hr>💰 ${T('loot')}: 🌲${stolen[0]} 🧱${stolen[1]} 🔩${stolen[2]}`;
                 }
             }
@@ -772,7 +874,7 @@ const engine = {
     },
 
     // --- SUB-HELPER: HTML GENERATION ---
-    generateBattleReportHTML: function(origin, target, startAtt, startDef, endAtt, result, events) {
+    generateBattleReportHTML: function (origin, target, startAtt, startDef, endAtt, result, events) {
         const originName = this.formatName(origin);
         const targetName = this.formatName(target);
         const isDefender = target.owner === 'player';
@@ -827,8 +929,8 @@ const engine = {
                 }
                 if (seeOutside) {
                     let outCounts = {};
-                    state.missions.forEach(mis => { if (mis.originId === target.id && mis.units) for(let u in mis.units) outCounts[u] = (outCounts[u]||0) + mis.units[u]; });
-                    state.villages.forEach(v => { if(v.stationed) v.stationed.forEach(s => { if(s.originId === target.id) for(let u in s.units) outCounts[u] = (outCounts[u]||0) + s.units[u]; }); });
+                    state.missions.forEach(mis => { if (mis.originId === target.id && mis.units) for (let u in mis.units) outCounts[u] = (outCounts[u] || 0) + mis.units[u]; });
+                    state.villages.forEach(v => { if (v.stationed) v.stationed.forEach(s => { if (s.originId === target.id) for (let u in s.units) outCounts[u] = (outCounts[u] || 0) + s.units[u]; }); });
                     const outStr = Object.keys(outCounts).map(u => `${T_Name(u)} ${outCounts[u]}`).join(", ");
                     intelHTML += `<div style="border-top:1px solid #ccc; margin-top:2px;"><b>Outside:</b> ${outStr || "None"}</div>`;
                 }
@@ -962,5 +1064,37 @@ const engine = {
         console.log(`AI Attack launched from ${origin.name} to ${target.name}`);
         ui.updateMissions(); // Force immediate refresh
         requestAutoSave();
+    },
+
+    getPlayerProfile: function (id) {
+        // 1. MATCH YOUR CSS COLORS
+        if (id === 'player') return { name: "You", color: "#42a5f5", alive: true }; // Blue
+        if (id === 'barbarian') return { name: "Barbarians", color: "#bdbdbd", alive: true }; // Grey
+
+        // 2. EXISTING AI
+        if (state.playerProfiles[id]) return state.playerProfiles[id];
+
+        // 3. NEW AI GENERATION (Dynamic Reds/Warm colors for enemies)
+        // We generate varied shades of Red/Orange/Pink to keep them looking like "Enemies"
+        // or keep full random if you prefer.
+        const h = Math.floor(Math.random() * 360);
+        const color = `hsl(${h}, 70%, 50%)`;
+
+        // ... name generation logic ...
+        state.playerProfiles[id] = {
+            name: generateAiName(id),
+            color: color,
+            alive: true,
+            points: 0
+        };
+        return state.playerProfiles[id];
+    },
+
+    getGlobalScore: function (ownerId) {
+        if (!ownerId) return 0;
+        // Sum points of all villages owned by this ID
+        return state.villages
+            .filter(v => v.owner === ownerId)
+            .reduce((sum, v) => sum + (v.points || 0), 0);
     },
 };

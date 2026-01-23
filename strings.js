@@ -80,7 +80,7 @@ const STRINGS = {
     },
     'zh': {
         // --- TABS & HEADERS ---
-        'tab_hq': '🏰 村庄', 'tab_recruit': '⚔️ 招募', 'tab_map': '🗺️ 地图', 'tab_reports': '📜 战报', 'tab_settings': '⚙️ 设置',
+        'tab_hq': '🏰 村庄', 'tab_recruit': '⚔️ 招募', 'tab_map': '🗺️ 地图', 'tab_reports': '📜 战报', 'tab_settings': '⚙️ 设置', 'tab_rankings': '🏆 排名',
         'header_lang': '语言', 'header_debug': '调试工具', 'header_cheat': '建筑作弊', 'header_save': '存档管理',
 
         // --- BUTTONS ---

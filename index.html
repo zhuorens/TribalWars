@@ -36,6 +36,7 @@
         <button id="tab-recruit" class="tab-btn" onclick="ui.showTab('recruit', this)">Recruit</button>
         <button id="tab-map" class="tab-btn" onclick="ui.showTab('map', this)">Map</button>
         <button id="tab-reports" class="tab-btn" onclick="ui.showTab('reports', this)">Reports</button>
+        <button id="tab-rankings" class="tab-btn" onclick="ui.showTab('rankings', this)">Rankings</button>
         <button id="tab-settings" class="tab-btn" onclick="ui.showTab('settings', this)">Settings</button>
     </div>
 
@@ -72,7 +73,7 @@
             </div>
 
             <div style="text-align:center; margin-top:10px;">
-                <span lang="en">Center:</span><span lang="zh">中心:</span> 
+                <span lang="en">Center:</span><span lang="zh">中心:</span>
                 <b id="map-center-coords">100|100</b>
             </div>
             <div id="active-missions"></div>
@@ -81,6 +82,13 @@
         <div id="reports" class="tab-content">
             <button id="btn-clear-history" class="btn" onclick="engine.clearReports()">Clear History</button>
             <div id="report-list" class="report-list"></div>
+        </div>
+
+        <div id="rankings" class="tab-content">
+            <div class="panel">
+                <h2>🏆 World Rankings</h2>
+                <div id="ranking-list"></div>
+            </div>
         </div>
 
         <div id="settings" class="tab-content">

@@ -96,7 +96,7 @@ const DB = {
             basePop: 80,
             time: 3600,
             points: 512,
-            maxLevel: 3,
+            maxLevel: 1,
             desc: "培养贵族"
         },
         "Wall": {
