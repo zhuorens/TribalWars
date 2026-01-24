@@ -3,6 +3,11 @@ const ui = {
     selTile: null, selBuild: null,
 
     init: function () {
+        if (!document.getElementById('map-tooltip')) {
+            const tt = document.createElement('div');
+            tt.id = 'map-tooltip';
+            document.body.appendChild(tt);
+        }
         ui.initCheatDropdown();
         ui.updateInterfaceText();
         ui.refresh();
@@ -407,11 +412,20 @@ const ui = {
 
                 recent.forEach(r => {
                     const dot = r.type === 'win' ? '🟢' : '🔴';
+
+                    // Find the actual index in the main array to pass to the viewer
+                    const rIndex = state.reports.indexOf(r);
+
+                    // ADDED: onclick, cursor style, and hover effect
                     html += `
-                <tr style="border-bottom:1px solid #eee;">
-                    <td style="padding:2px 5px;">${dot}</td>
-                    <td style="padding:2px;">${r.title}</td>
-                    <td style="padding:2px; text-align:right; color:#888;">${r.time}</td>
+                <tr style="border-bottom:1px solid #eee; cursor:pointer; transition:background 0.1s;" 
+                    onclick="ui.previewReport(${rIndex})"
+                    onmouseenter="this.style.background='#f0f0f0'" 
+                    onmouseleave="this.style.background='transparent'">
+                    
+                    <td style="padding:4px 5px;">${dot}</td>
+                    <td style="padding:4px;">${r.title}</td>
+                    <td style="padding:4px; text-align:right; color:#888;">${r.time}</td>
                 </tr>`;
                 });
                 html += `</table></div>`;
@@ -447,9 +461,45 @@ const ui = {
         buttons += resBtn;
 
         footer.innerHTML = buttons;
+        footer.style.display = 'flex';
         document.getElementById('attack-modal').style.display = 'flex';
 
         ui.updateTravelTime();
+    },
+
+    previewReport: function (index) {
+        const r = state.reports[index];
+        if (!r) return;
+
+        const container = document.getElementById('a-modal-units');
+
+        // Render Report Content
+        const html = `
+            <div style="background:#fff; border:1px solid #ccc; padding:10px; border-radius:4px; font-size:12px; max-height:300px; overflow-y:auto;">
+                <div style="border-bottom:1px solid #eee; padding-bottom:5px; margin-bottom:10px;">
+                    <div style="font-weight:bold; font-size:14px; color:${r.type === 'win' ? '#2e7d32' : '#c62828'}">
+                        ${r.title}
+                    </div>
+                    <div style="color:#888; font-size:10px;">${r.time}</div>
+                </div>
+                <div style="line-height:1.4;">
+                    ${r.content}
+                </div>
+            </div>
+            
+            <div style="margin-top:15px; text-align:center;">
+                <button class="btn" onclick="ui.openAttackModal(ui.selTile)">⬅️ ${T('btn_return') || "Back to Attack"}</button>
+            </div>
+        `;
+
+        container.innerHTML = html;
+
+        // Update Title to indicate we are viewing a report
+        document.getElementById('a-modal-title').innerText = "📋 Report View";
+
+        // Hide the main modal footer actions (Attack/Support buttons) while viewing report
+        const footer = document.querySelector('#attack-modal .modal-actions');
+        if (footer) footer.style.display = 'none';
     },
 
     // --- NEW HELPER: Update Time Display ---
@@ -572,11 +622,15 @@ const ui = {
         map.style.border = "1px solid #999";
         map.style.background = "rgba(0,0,0,0.1)";
 
+        // Helper to get Available Pop
+        const popAvail = engine.getPopLimit(v) - engine.getPopUsed(v);
+
         for (let b in DB.positions) {
             const pos = DB.positions[b];
             const d = DB.buildings[b];
+            if (!d) continue;
 
-            // 1. Calculate Virtual Level (Current + Queue)
+            // 1. Calculate Virtual Level
             const currentLvl = v.buildings[b] || 0;
             const queuedCount = v.queues.build.filter(q => q.building === b).length;
             const virtualLvl = currentLvl + queuedCount;
@@ -594,13 +648,11 @@ const ui = {
             if (pos.shape) div.style.borderRadius = pos.shape;
             if (pos.border) div.style.border = pos.border;
 
-            // 2. Determine Display Content
-            // If maxed, show "MAX" or a star. Otherwise show level.
+            // 2. Display Content
             let lvlDisplay = virtualLvl;
             if (virtualLvl >= maxLvl) {
                 lvlDisplay = `<span style="color:gold; font-size:10px;">MAX</span>`;
             } else if (queuedCount > 0) {
-                // Optional: Indicate queue activity (e.g. "5+1")
                 lvlDisplay = `${currentLvl}<span style="font-size:9px">+${queuedCount}</span>`;
             }
 
@@ -608,25 +660,37 @@ const ui = {
                 div.innerHTML = `<div class="b-lvl">${lvlDisplay}</div><div>${T_Name(b)}</div>`;
             }
 
-            // 3. Affordability Check (Only if not maxed)
+            // 3. Affordability Check
             if (virtualLvl < maxLvl) {
-                // Calculate cost for the NEXT level (Virtual Level)
+                // Cost for the UPGRADE
                 const cost = [
                     Math.floor(d.base[0] * Math.pow(d.factor, virtualLvl)),
                     Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)),
                     Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
                 ];
 
-                // Check if player has resources + storage space (optional but good practice)
-                if (v.res[0] >= cost[0] && v.res[1] >= cost[1] && v.res[2] >= cost[2]) {
-                    // Also check Population Limit if applicable
-                    const popNeeded = Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl));
-                    const popAvail = engine.getPopLimit(v) - engine.getPopUsed(v);
+                // --- FIX: INCREMENTAL POPULATION CALCULATION ---
+                // Pop Total at Next Level (target)
+                // We use virtualLvl because that aligns with the cost formula (base * factor^L)
+                const nextTotalPop = Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl));
 
-                    // Only glow if we have Res AND Pop (except for Farm/Warehouse which don't need pop)
-                    if (b === "Farm" || b === "Warehouse" || popAvail >= popNeeded) {
-                        div.classList.add('affordable');
-                    }
+                // Pop Total at Current Level
+                // If level is 0, pop is 0. Else use virtualLvl - 1
+                const currentTotalPop = (virtualLvl === 0)
+                    ? 0
+                    : Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl - 1));
+
+                // The population needed is just the difference
+                const popNeeded = Math.max(0, nextTotalPop - currentTotalPop);
+
+                const hasRes = Math.floor(v.res[0]) >= cost[0] &&
+                    Math.floor(v.res[1]) >= cost[1] &&
+                    Math.floor(v.res[2]) >= cost[2];
+
+                const hasPop = (b === "Farm" || b === "Warehouse" || popAvail >= popNeeded);
+
+                if (hasRes && hasPop) {
+                    div.classList.add('affordable');
                 }
             }
 
@@ -639,14 +703,27 @@ const ui = {
         ui.selBuild = bName;
         const v = engine.getCurrentVillage();
         const d = DB.buildings[bName];
-        const maxLvl = d.maxLevel || 30; // Get max level from DB
+        const maxLvl = d.maxLevel || 30;
+
+        // Helper: Calculate Available Population
+        const popAvail = engine.getPopLimit(v) - engine.getPopUsed(v);
+
+        // Helper: Calculate Pop Required for Next Level
+        // Logic: (Total Pop at Next Level) - (Total Pop at Current Level)
+        const getPopNeeded = (virtualLvl) => {
+            const nextTotal = Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl));
+            const currentTotal = (virtualLvl === 0)
+                ? 0
+                : Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl - 1));
+            return Math.max(0, nextTotal - currentTotal);
+        };
 
         // --- SMITHY HANDLING (Research + Upgrade) ---
         if (bName === "Smithy") {
             document.getElementById('b-modal-title').innerText = T_Name("Smithy");
             document.getElementById('b-modal-desc').innerText = d.desc;
 
-            // 1. Render Unit Research List
+            // 1. Render Unit Research List (Unchanged logic, kept for completeness)
             let html = "<div style='display:grid; grid-template-columns: 1fr 1fr; gap:5px; max-height:200px; overflow-y:auto; margin-bottom:10px;'>";
             for (let u in DB.units) {
                 if (u === "Catapult" && !CONFIG.enableCatapults) continue;
@@ -661,6 +738,7 @@ const ui = {
                     const rc = DB.units[u].cost.map(x => Math.floor(x * curLvl * 15));
                     const baseTime = DB.units[u].time * 200;
                     const rTime = Math.floor(baseTime * Math.pow(0.9, v.buildings[bName]) * 1000);
+                    // Research doesn't cost population, so no check here
                     html += `<div style="background:#eee; padding:5px; font-size:12px; border:1px solid #ccc;"><b>${T_Name(u)}</b><br>Next: Lv${nextLvl}<br>🌲${rc[0]} 🧱${rc[1]} 🔩${rc[2]}<br>⏳ ${formatTime(rTime)}<br><button class="btn" style="padding:2px 5px; font-size:10px; width:100%" onclick="game.research('${u}')">${T('upgrade')}</button></div>`;
                 }
             }
@@ -670,22 +748,24 @@ const ui = {
             const queuedCount = v.queues.build.filter(q => q.building === bName).length;
             const virtualLvl = v.buildings[bName] + queuedCount;
 
-            // --- NEW: Max Level Check ---
             if (virtualLvl >= maxLvl) {
                 html += `<hr><div style="text-align:center; padding:10px; color:#555; background:#f9f9f9; border:1px solid #eee; margin-top:5px;">
                 <h4>${T_Name(bName)} (Lv ${virtualLvl})</h4>
                 <div style="font-weight:bold; color:#888;">${T('max_level') || "Max Level Reached"}</div>
             </div>`;
-
                 document.getElementById('b-modal-cost').innerHTML = html;
-                document.getElementById('b-modal-btn').style.display = 'none'; // Hide main button
+                document.getElementById('b-modal-btn').style.display = 'none';
             } else {
-                // Not max level: Show upgrade cost and button
+                // Not max level: Show upgrade cost
                 const c = [
                     Math.floor(d.base[0] * Math.pow(d.factor, virtualLvl)),
                     Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)),
                     Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
                 ];
+
+                // --- NEW: Calculate Pop for Smithy Upgrade ---
+                const popNeeded = getPopNeeded(virtualLvl);
+
                 const hqLvl = v.buildings["Headquarters"] || 1;
                 const speedMod = Math.pow(0.95, hqLvl);
                 const tSeconds = Math.floor(d.time * Math.pow(1.2, virtualLvl) * speedMod);
@@ -701,14 +781,16 @@ const ui = {
                 const btnText = `${T('upgrade')} ${T_Name(bName)}`;
 
                 html += `<div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span style="font-size:11px;">🌲${c[0]} 🧱${c[1]} 🔩${c[2]} | ⏳ ${formatTime(tSeconds * 1000)}</span>
+                        <span style="font-size:11px;">
+                            🌲${c[0]} 🧱${c[1]} 🔩${c[2]} 👥${popNeeded}<br> 
+                            ⏳ ${formatTime(tSeconds * 1000)}
+                        </span>
                         <button id="smithy-upgrade-btn" class="btn">${btnText}</button>
                      </div>`;
 
                 document.getElementById('b-modal-cost').innerHTML = html;
                 document.getElementById('b-modal-btn').style.display = 'none';
 
-                // Bind click event after HTML injection
                 setTimeout(() => {
                     const btn = document.getElementById('smithy-upgrade-btn');
                     if (btn) {
@@ -716,11 +798,15 @@ const ui = {
 
                         const isQueueFull = v.queues.build.length >= CONFIG.buildQueueLimit;
                         const canAfford = v.res[0] >= c[0] && v.res[1] >= c[1] && v.res[2] >= c[2];
+                        const hasPop = popAvail >= popNeeded; // Smithy needs pop
 
                         if (isQueueFull) {
                             btn.innerText = T('queue_full');
                             btn.disabled = true;
                         } else if (!canAfford) {
+                            btn.disabled = true;
+                        } else if (!hasPop) {
+                            btn.innerText = "No Pop";
                             btn.disabled = true;
                         }
                     }
@@ -738,9 +824,7 @@ const ui = {
         document.getElementById('b-modal-title').innerText = `${T_Name(bName)} (Lv ${virtualLvl})`;
         document.getElementById('b-modal-desc').innerText = d.desc;
 
-        // --- NEW: Max Level Check ---
         if (virtualLvl >= maxLvl) {
-            // Max Level UI
             let queueStatus = "";
             if (queuedCount > 0) {
                 queueStatus = `<div style="color:blue; font-size:11px; margin-bottom:5px;">${T('check_queue').replace('%s', queuedCount)}</div>`;
@@ -761,6 +845,9 @@ const ui = {
                 Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
             ];
 
+            // --- NEW: Calculate Pop for Standard Upgrade ---
+            const popNeeded = getPopNeeded(virtualLvl);
+
             const hqLvl = v.buildings["Headquarters"] || 1;
             const speedMod = Math.pow(0.95, hqLvl);
             const tSeconds = Math.floor(d.time * Math.pow(1.2, virtualLvl) * speedMod);
@@ -770,9 +857,10 @@ const ui = {
                 queueStatus = `<div style="color:blue; font-size:11px; margin-bottom:5px;">${T('check_queue').replace('%s', queuedCount)}</div>`;
             }
 
+            // Added Pop Icon and Value to Display
             document.getElementById('b-modal-cost').innerHTML = `
             ${queueStatus}
-            ${T('cost')}: 🌲${c[0]} 🧱${c[1]} 🔩${c[2]} | ⏳ ${formatTime(tSeconds * 1000)}
+            ${T('cost')}: 🌲${c[0]} 🧱${c[1]} 🔩${c[2]} 👥${popNeeded} | ⏳ ${formatTime(tSeconds * 1000)}
         `;
 
             const btn = document.getElementById('b-modal-btn');
@@ -783,14 +871,29 @@ const ui = {
             const isQueueFull = v.queues.build.length >= CONFIG.buildQueueLimit;
             const canAfford = v.res[0] >= c[0] && v.res[1] >= c[1] && v.res[2] >= c[2];
 
-            btn.disabled = !canAfford || isQueueFull;
-            if (isQueueFull) btn.innerText = T('queue_full');
+            // Farm and Warehouse bypass population checks
+            const ignorePop = (bName === "Farm" || bName === "Warehouse");
+            const hasPop = ignorePop || (popAvail >= popNeeded);
+
+            // Combined logic for disabling button
+            if (isQueueFull) {
+                btn.innerText = T('queue_full');
+                btn.disabled = true;
+            } else if (!canAfford) {
+                btn.disabled = true;
+                // Optional: btn.innerText = "No Res";
+            } else if (!hasPop) {
+                btn.innerText = "No Pop"; // Distinct feedback
+                btn.disabled = true;
+            } else {
+                btn.disabled = false;
+            }
         }
 
         document.getElementById('building-modal').style.display = 'flex';
     },
 
-    renderMap: function () {
+renderMap: function () {
         const cx = state.mapView.x, cy = state.mapView.y;
         document.getElementById('map-center-coords').innerText = `${cx}|${cy}`;
         const grid = document.getElementById('map-grid');
@@ -812,9 +915,9 @@ const ui = {
                     const profile = engine.getPlayerProfile(ownerId);
                     const color = profile ? profile.color : '#bdbdbd';
 
-                    // 2. APPLY BACKGROUND COLOR (Replaces your CSS classes)
+                    // 2. APPLY BACKGROUND COLOR
                     d.style.background = color;
-                    d.style.border = "1px solid rgba(0,0,0,0.2)"; // Slight border for definition
+                    d.style.border = "1px solid rgba(0,0,0,0.2)";
 
                     // 3. Icon & Name
                     let icon = "🛖";
@@ -826,7 +929,6 @@ const ui = {
 
                     const pts = t.points ? `\n<span style='font-size:9px; opacity:0.8'>${t.points}</span>` : "";
 
-                    // Text is now White with Shadow for readability on colored backgrounds
                     d.innerHTML = `
                     <div style="font-size:16px; margin-top:2px;">${icon}</div>
                     <div class="tile-name" style="color:white; text-shadow:1px 1px 0 #000; font-weight:bold;">
@@ -835,9 +937,16 @@ const ui = {
                     ${pts}
                 `;
 
+                    // --- TOOLTIP EVENTS ADDED HERE ---
+                    d.onmouseenter = () => ui.showMapTooltip(x, y);
+                    d.onmousemove = (e) => ui.moveTooltip(e);
+                    d.onmouseleave = () => ui.hideMapTooltip();
+                    // ---------------------------------
+
                     d.onclick = (e) => {
                         e.stopPropagation();
-                        if (t.id === engine.getCurrentVillage().id) {
+                        // Check if it's a real village object with an ID, if so, check if it's yours
+                        if (t.id && t.id === engine.getCurrentVillage().id) {
                             alert(T('managing_alert'));
                             return;
                         }
@@ -847,7 +956,7 @@ const ui = {
 
                 if (x === cx && y === cy) {
                     d.style.border = "2px solid yellow";
-                    d.style.boxShadow = "0 0 10px yellow"; // Stronger highlight for selected
+                    d.style.boxShadow = "0 0 10px yellow";
                 }
 
                 grid.appendChild(d);
@@ -886,7 +995,7 @@ const ui = {
             const profile = engine.getPlayerProfile(v.owner);
             ctx.fillStyle = profile ? profile.color : '#888'; // Default grey if missing
 
-            ctx.fillRect(mx, my, 2.2, 2.2);
+            ctx.fillRect(mx, my, 2.5, 2.5);
         });
 
         // 3. Draw Viewport Rectangle
@@ -896,7 +1005,7 @@ const ui = {
         const vy = state.mapView.y * scale;
 
         ctx.strokeStyle = "#FFFFFF";
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.2;
         ctx.strokeRect(vx - (rectSize / 2), vy - (rectSize / 2), rectSize, rectSize);
 
         // 4. Click Navigation Logic
@@ -917,6 +1026,79 @@ const ui = {
             ui.renderMap();
             ui.renderMinimap();
         };
+    },
+
+showMapTooltip: function (x, y) {
+        let tt = document.getElementById('map-tooltip');
+        if (!tt) {
+            tt = document.createElement('div');
+            tt.id = 'map-tooltip';
+            document.body.appendChild(tt);
+        }
+
+        const v = state.villages.find(v => v.x === x && v.y === y);
+        if (!v) return;
+
+        const profile = engine.getPlayerProfile(v.owner);
+        const ownerName = profile ? profile.name : "Unknown";
+        const ownerColor = profile ? profile.color : "#fff";
+
+        // 1. Calculate Distance
+        const current = engine.getCurrentVillage();
+        const dist = Math.sqrt(Math.pow(x - current.x, 2) + Math.pow(y - current.y, 2)).toFixed(1);
+
+        // 2. Logic: Show Total Points only if NOT Barbarian
+        let totalPointsHtml = "";
+        
+        if (v.owner !== 'barbarian') {
+            const totalPoints = state.villages
+                .filter(vil => vil.owner === v.owner)
+                .reduce((sum, vil) => sum + (vil.points || 0), 0);
+            
+            totalPointsHtml = `
+            <div class="tt-row">
+                <span style="color:#aaa">Owner Total:</span>
+                <span style="color:#f4e4bc">${totalPoints.toLocaleString()}</span>
+            </div>`;
+        }
+
+        // 3. Render HTML
+        tt.innerHTML = `
+            <h4>${v.name} (${x}|${y})</h4>
+            <div class="tt-row">
+                <span style="color:#aaa">Owner:</span>
+                <span style="font-weight:bold; color:${ownerColor}">${ownerName}</span>
+            </div>
+            <div class="tt-row">
+                <span style="color:#aaa">Village Points:</span>
+                <span>${v.points.toLocaleString()}</span>
+            </div>
+            ${totalPointsHtml}
+            <div class="tt-row">
+                <span style="color:#aaa">Distance:</span>
+                <span>${dist} fields</span>
+            </div>
+        `;
+        tt.style.display = 'block';
+    },
+
+    // Move the tooltip with the mouse
+    moveTooltip: function (e) {
+        const tt = document.getElementById('map-tooltip');
+        // Offset by 15px so it doesn't cover the cursor
+        const x = e.clientX + 15;
+        const y = e.clientY + 15;
+        
+        // Prevent going off-screen (Right/Bottom edges)
+        // (Simple check, can be expanded)
+        tt.style.left = x + 'px';
+        tt.style.top = y + 'px';
+    },
+
+    // Hide it
+    hideMapTooltip: function () {
+        const tt = document.getElementById('map-tooltip');
+        if(tt) tt.style.display = 'none';
     },
 
     updateMissions: function () {

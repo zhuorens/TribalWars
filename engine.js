@@ -30,7 +30,7 @@ function requestAutoSave() {
 
 // --- ENGINE (Logic) ---
 const engine = {
-init: function () {
+    init: function () {
         if (localStorage.getItem("tw_v5_save")) {
             try {
                 // Load Save
@@ -53,16 +53,16 @@ init: function () {
                 if (!state.selectedVillageId && state.villages.length > 0) {
                     state.selectedVillageId = state.villages[0].id;
                 }
-                
+
                 // --- 2. Initialize Profiles (For AI Warlords) ---
                 state.playerProfiles = state.playerProfiles || {};
-                
+
                 // Ensure critical profiles exist
                 if (!state.playerProfiles['player']) {
                     state.playerProfiles['player'] = { name: "You", color: "#42a5f5", alive: true };
                 }
                 if (!state.playerProfiles['barbarian']) {
-                     state.playerProfiles['barbarian'] = { name: "Barbarians", color: "#bdbdbd", alive: true };
+                    state.playerProfiles['barbarian'] = { name: "Barbarians", color: "#bdbdbd", alive: true };
                 }
 
                 // --- 3. MIGRATION: Fix old saves ---
@@ -71,7 +71,7 @@ init: function () {
                     if (!v.queues) v.queues = { build: [], research: [], barracks: [], stable: [], workshop: [], academy: [] };
                     if (!v.stationed) v.stationed = [];
                     if (v.buildings["Market"] === undefined) v.buildings["Market"] = 0;
-                    
+
                     // Fix Barbarian ID mismatch ('barb' -> 'barbarian')
                     if (v.owner === 'barb') v.owner = 'barbarian';
                 });
@@ -85,7 +85,7 @@ init: function () {
             } catch (e) { console.error("Save Load Error:", e); }
         } else {
             // --- NEW GAME SETUP ---
-            
+
             // 1. Initialize Profiles FIRST (Required for Map Generation)
             state.playerProfiles = {
                 'player': { name: "You", color: "#42a5f5", alive: true },
@@ -140,16 +140,31 @@ init: function () {
     getPopUsed: function (village) {
         let used = 0;
 
-        // 1. Calculate Pop from Buildings
+        // 1. Calculate Pop from Buildings (Existing Levels)
         for (let bName in village.buildings) {
             let level = village.buildings[bName];
             if (level > 0 && DB.buildings[bName]) {
                 const b = DB.buildings[bName];
-                // Building Pop Formula: Base * (Factor ^ (Level - 1))
                 if (b.basePop > 0) {
+                    // Formula: Base * (Factor ^ (Level - 1))
+                    // Note: Ensure this formula matches your DB/Excel logic exactly
                     used += Math.round(b.basePop * Math.pow((b.factor - 1) * 3 / 4 + 1, level - 1));
                 }
             }
+        }
+
+        // --- NEW: Calculate Pop from Building Queue ---
+        // We added 'pop' to the queue object in the build() function. Now we sum it.
+        if (village.queues.build) {
+            village.queues.build.forEach(item => {
+                if (item.pop) {
+                    used += item.pop;
+                } else {
+                    // Fallback for old saves or items without 'pop' property
+                    // We estimate it, or strictly you could ignore it to prevent bugs
+                    // But ideally, the build() function should always save .pop
+                }
+            });
         }
 
         // 2. Calculate Pop from Units (Home)
@@ -159,7 +174,7 @@ init: function () {
             }
         }
 
-        // 3. Calculate Pop from Queues (Troops being built reserve pop)
+        // 3. Calculate Pop from Unit Queues (Troops being built)
         ['barracks', 'stable', 'workshop', 'academy'].forEach(qType => {
             if (village.queues[qType]) {
                 village.queues[qType].forEach(item => {
@@ -170,7 +185,7 @@ init: function () {
             }
         });
 
-        // 4. Calculate Pop from Troops Outside (Attacking/Supporting others)
+        // 4. Calculate Pop from Troops Outside
         state.missions.forEach(m => {
             if (m.originId === village.id) {
                 for (let u in m.units) {
@@ -179,7 +194,7 @@ init: function () {
             }
         });
 
-        // 5. Calculate Pop from Troops Stationed Elsewhere (Support)
+        // 5. Calculate Pop from Stationed Troops
         state.villages.forEach(v => {
             if (v.stationed) {
                 v.stationed.forEach(s => {
@@ -496,7 +511,7 @@ init: function () {
             if (isAi || isBarb) {
                 const growthChance = isAi ? 0.80 : 0.3; // High chance for active world
                 if (Math.random() < growthChance) {
-                    
+
                     // IMPROVEMENT: Filter list to find ONLY valid upgrades
                     const validUpgrades = Object.keys(DB.buildings).filter(bKey => {
                         const currentLvl = v.buildings[bKey] || 0;
@@ -507,10 +522,10 @@ init: function () {
                     // Only proceed if there is something to upgrade
                     if (validUpgrades.length > 0) {
                         const randBuild = validUpgrades[Math.floor(Math.random() * validUpgrades.length)];
-                        
+
                         v.buildings[randBuild] = (v.buildings[randBuild] || 0) + 1;
                         v.points = engine.calculatePoints(v);
-                        
+
                         // Update Map Cache
                         if (state.mapData[`${v.x},${v.y}`]) {
                             state.mapData[`${v.x},${v.y}`].points = v.points;

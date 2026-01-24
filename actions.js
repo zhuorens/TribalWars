@@ -1,30 +1,83 @@
 // --- GAME ACTIONS ---
 const game = {
-    cancel: function (queueType, idx) {
+cancel: function (queueType, idx) {
         const v = engine.getCurrentVillage();
         const q = v.queues[queueType];
         if (!q || !q[idx]) return;
 
         const item = q[idx];
-        let cost = [0, 0, 0];
-        if (queueType === 'build') {
-            const d = DB.buildings[item.building];
-            const lvl = v.buildings[item.building];
-            cost = [Math.floor(d.base[0] * Math.pow(d.factor, lvl)), Math.floor(d.base[1] * Math.pow(d.factor, lvl)), Math.floor(d.base[2] * Math.pow(d.factor, lvl))];
-        } else if (queueType === 'research') {
-            const u = item.unit;
-            const lvl = item.level - 1;
-            cost = DB.units[u].cost.map(x => Math.floor(x * lvl * 5));
-        } else {
-            const u = DB.units[item.unit];
-            cost = [u.cost[0] * item.count, u.cost[1] * item.count, u.cost[2] * item.count];
-        }
-
-        v.res[0] += cost[0]; v.res[1] += cost[1]; v.res[2] += cost[2];
-        q.splice(idx, 1);
-        ui.refresh(); 
         
-        // CHANGED: Use soft save
+        // --- LOGIC CHANGE: CASCADE CANCEL ---
+        // If this is a building, we must also cancel any LATER upgrades for the same building
+        // to prevent "paying for Level 10 but getting Level 5" bugs.
+        let indexesToRemove = [idx];
+
+        if (queueType === 'build') {
+            // Look ahead in the queue for the same building
+            for (let i = idx + 1; i < q.length; i++) {
+                if (q[i].building === item.building) {
+                    indexesToRemove.push(i);
+                }
+            }
+        }
+        
+        // Sort indexes descending (remove from end first to preserve array positions)
+        indexesToRemove.sort((a, b) => b - a);
+
+        // Process removals
+        indexesToRemove.forEach(remIdx => {
+            const targetItem = q[remIdx];
+            let cost = [0, 0, 0];
+
+            if (queueType === 'build') {
+                const d = DB.buildings[targetItem.building];
+                
+                // Calculate level this specific item was aiming for
+                // We count how many of this building are in the queue BEFORE this specific item
+                const queuedBefore = q.slice(0, remIdx).filter(x => x.building === targetItem.building).length;
+                const targetLvl = (v.buildings[targetItem.building] || 0) + queuedBefore;
+
+                cost = [
+                    Math.floor(d.base[0] * Math.pow(d.factor, targetLvl)), 
+                    Math.floor(d.base[1] * Math.pow(d.factor, targetLvl)), 
+                    Math.floor(d.base[2] * Math.pow(d.factor, targetLvl))
+                ];
+
+                // Refund Pop (Use saved value if available, else calc)
+                if (targetItem.pop !== undefined) {
+                    v.popUsed -= targetItem.pop;
+                } else {
+                    const nextTotal = Math.round((d.basePop || 0) * Math.pow(d.factor, targetLvl + 1));
+                    const curTotal = (targetLvl === 0) ? 0 : Math.round((d.basePop || 0) * Math.pow(d.factor, targetLvl));
+                    v.popUsed -= Math.max(0, nextTotal - curTotal);
+                }
+            } 
+            else if (queueType === 'research') {
+                const u = targetItem.unit;
+                const lvl = targetItem.level - 1;
+                cost = DB.units[u].cost.map(x => Math.floor(x * lvl * 5));
+            } 
+            else {
+                // Units
+                const u = DB.units[targetItem.unit];
+                cost = [u.cost[0] * targetItem.count, u.cost[1] * targetItem.count, u.cost[2] * targetItem.count];
+                const unitPop = u.pop || 1;
+                v.popUsed -= (unitPop * targetItem.count);
+            }
+
+            // Refund Resources
+            v.res[0] += cost[0];
+            v.res[1] += cost[1];
+            v.res[2] += cost[2];
+
+            // Remove from array
+            q.splice(remIdx, 1);
+        });
+
+        // Safety clamp
+        if (v.popUsed < 0) v.popUsed = 0;
+
+        ui.refresh();
         requestAutoSave();
     },
 
@@ -48,9 +101,32 @@ const game = {
             Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
         ];
 
+        // --- POPULATION CHECK ---
+        const popAvail = engine.getPopLimit(v) - engine.getPopUsed(v);
+        
+        // Calculate Incremental Pop Needed
+        const nextTotalPop = Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl + 1));
+        const currentTotalPop = (virtualLvl === 0) 
+            ? 0 
+            : Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl));
+        
+        const popNeeded = Math.max(0, nextTotalPop - currentTotalPop);
+
+        // Allow Farm/Warehouse/Storage to build even if pop is full
+        const ignorePop = (b === "Farm" || b === "Warehouse");
+
+        if (!ignorePop && popAvail < popNeeded) {
+            alert("Not enough population space!");
+            return;
+        }
+
         if (v.res[0] >= c[0] && v.res[1] >= c[1] && v.res[2] >= c[2]) {
             v.res[0] -= c[0]; v.res[1] -= c[1]; v.res[2] -= c[2];
             
+            // Deduct Population Immediately
+            if (!v.popUsed) v.popUsed = 0;
+            v.popUsed += popNeeded;
+
             const hqLvl = v.buildings["Headquarters"] || 1;
             const speedMod = Math.pow(0.95, hqLvl); 
             const duration = Math.floor(d.time * Math.pow(1.2, virtualLvl) * speedMod) * 1000;
@@ -62,11 +138,11 @@ const game = {
             v.queues.build.push({ 
                 building: b, 
                 duration: duration, 
-                finish: lastFinish + duration 
+                finish: lastFinish + duration,
+                pop: popNeeded // Save the pop cost for easier cancellation later
             });
             
             ui.refresh(); 
-            // CHANGED: Use soft save
             requestAutoSave();
         } else {
             alert(T('resLimit'));
@@ -88,38 +164,45 @@ const game = {
         const v = engine.getCurrentVillage();
         const d = DB.units[u];
     
-        // 1. Calculate Costs
-        const popCost = d.pop * amt;
-        const popCurrent = parseInt(document.getElementById('pop-current').innerText);
-        const popMax = parseInt(document.getElementById('pop-max').innerText);
+        // 1. Calculate Costs (Resources & Pop)
+        const unitPop = d.pop || 1; // Default to 1 if undefined
+        const popCost = unitPop * amt;
+        
+        // Use engine helpers instead of DOM for accuracy
+        const popAvail = engine.getPopLimit(v) - engine.getPopUsed(v);
     
-        if (popCurrent + popCost > popMax) { alert(T('popLimit')); return; }
+        if (popCost > popAvail) { 
+            alert(T('popLimit')); 
+            return; 
+        }
     
         const c = [d.cost[0] * amt, d.cost[1] * amt, d.cost[2] * amt];
     
         // 2. Resource Check
         if (v.res[0] >= c[0] && v.res[1] >= c[1] && v.res[2] >= c[2]) {
             // Deduct Resources
-            v.res[0] -= c[0]; v.res[1] -= c[1]; v.res[2] -= c[2];
+            v.res[0] -= c[0]; 
+            v.res[1] -= c[1]; 
+            v.res[2] -= c[2];
+            
+            // --- FIX: Deduct Population Immediately ---
+            if (!v.popUsed) v.popUsed = 0;
+            v.popUsed += popCost;
     
             const qType = d.building.toLowerCase();
             const q = v.queues[qType];
     
             // 3. Calculate Time Per Unit (Applying Building Speed)
             const bLvl = v.buildings[d.building] || 1;
-            // Example: Standard speed formula (0.96 ^ level). Adjust as needed.
             const speedFactor = Math.pow(0.96, bLvl); 
             const unitTime = d.time * 1000 * speedFactor; 
     
             // 4. Add to Queue
-            // Check if the last item is the same unit. If so, just add to the pile.
             const lastItem = q.length > 0 ? q[q.length - 1] : null;
     
             if (lastItem && lastItem.unit === u) {
                 lastItem.count += amt;
             } else {
-                // We set 'finish' to NULL initially. 
-                // The engine loop will set the start time when this batch reaches the front.
                 q.push({ 
                     unit: u, 
                     count: amt, 

@@ -413,3 +413,33 @@ body { font-family: 'Segoe UI', sans-serif; background-color: #3b2e2a; color: #3
 }
 
 .map-layout { display: grid; grid-template-columns: 40px auto 40px; grid-template-rows: 40px auto 40px; gap: 5px; justify-content: center; align-items: center; }
+
+/* Add to style.css */
+#map-tooltip {
+    display: none;
+    position: fixed;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.9);
+    border: 1px solid #d2b48c; /* Tan/Gold border */
+    color: #fff;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    pointer-events: none; /* Important: lets mouse clicks pass through to the tile */
+    box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+    min-width: 150px;
+}
+
+#map-tooltip h4 {
+    margin: 0 0 5px 0;
+    color: #f4e4bc;
+    border-bottom: 1px solid #555;
+    padding-bottom: 3px;
+    font-size: 13px;
+}
+
+.tt-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 2px;
+}
