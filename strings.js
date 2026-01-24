@@ -11,6 +11,7 @@ const STRINGS = {
         'tab_reports': '📜 Reports',
         'tab_settings': '⚙️ Settings',
         'tab_rankings': '🏆 Rankings',
+        'tab_overview': '📊 Overview',
         'header_lang': 'Language',
         'header_debug': 'Debug Tools',
         'header_cheat': 'Building Cheat',
@@ -81,7 +82,7 @@ const STRINGS = {
     },
     'zh': {
         // --- TABS & HEADERS ---
-        'tab_hq': '🏰 村庄', 'tab_recruit': '⚔️ 招募', 'tab_map': '🗺️ 地图', 'tab_reports': '📜 战报', 'tab_settings': '⚙️ 设置', 'tab_rankings': '🏆 排名',
+        'tab_hq': '🏰 村庄', 'tab_recruit': '⚔️ 招募', 'tab_map': '🗺️ 地图', 'tab_reports': '📜 战报', 'tab_settings': '⚙️ 设置', 'tab_rankings': '🏆 排名', 'tab_overview': '📊 总览',
         'header_lang': '语言', 'header_debug': '调试工具', 'header_cheat': '建筑作弊', 'header_save': '存档管理',
 
         // --- BUTTONS ---

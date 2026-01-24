@@ -38,7 +38,7 @@ const ui = {
 
     updateInterfaceText: function () {
         const mapping = {
-            'tab-hq': 'tab_hq', 'tab-recruit': 'tab_recruit', 'tab-map': 'tab_map', 'tab-reports': 'tab_reports', 'tab-settings': 'tab_settings', 'tab-rankings': 'tab_rankings',
+            'tab-hq': 'tab_hq', 'tab-recruit': 'tab_recruit', 'tab-map': 'tab_map', 'tab-reports': 'tab_reports', 'tab-settings': 'tab_settings', 'tab-rankings': 'tab_rankings', 'tab-overview': 'tab_overview',
             'btn-return-home': 'btn_return', 'btn-clear-history': 'btn_clear', 'header-language': 'header_lang',
             'header-debug': 'header_debug', 'header-cheat': 'header_cheat', 'header-save': 'header_save',
             'btn-download': 'btn_download', 'btn-wipe': 'btn_wipe', 'btn-close-build': 'btn_close'
@@ -73,6 +73,9 @@ const ui = {
         }
         else if (id === 'rankings') {
             ui.renderRankingTab(); // <--- Added this hook
+        }
+        else if (id === 'overview') {
+            ui.renderOverview();
         }
 
         ui.refresh();
@@ -603,7 +606,12 @@ const ui = {
         select.value = v.id;
     },
 
-    switchVillage: function (id) { state.selectedVillageId = parseFloat(id); ui.refresh(); const v = engine.getCurrentVillage(); state.mapView.x = v.x; state.mapView.y = v.y; ui.renderMap(); },
+    switchVillage: function (id) {
+        state.selectedVillageId = parseFloat(id);
+        ui.refresh(); const v = engine.getCurrentVillage(); state.mapView.x = v.x; state.mapView.y = v.y; ui.renderMap();
+        const hqBtn = document.querySelector("button[onclick*='hq']");
+        ui.showTab('hq', hqBtn);
+    },
 
     renameVillage: function () {
         const v = engine.getCurrentVillage();
@@ -893,7 +901,7 @@ const ui = {
         document.getElementById('building-modal').style.display = 'flex';
     },
 
-renderMap: function () {
+    renderMap: function () {
         const cx = state.mapView.x, cy = state.mapView.y;
         document.getElementById('map-center-coords').innerText = `${cx}|${cy}`;
         const grid = document.getElementById('map-grid');
@@ -995,7 +1003,7 @@ renderMap: function () {
             const profile = engine.getPlayerProfile(v.owner);
             ctx.fillStyle = profile ? profile.color : '#888'; // Default grey if missing
 
-            ctx.fillRect(mx, my, 2.5, 2.5);
+            ctx.fillRect(mx, my, 3, 3);
         });
 
         // 3. Draw Viewport Rectangle
@@ -1005,8 +1013,8 @@ renderMap: function () {
         const vy = state.mapView.y * scale;
 
         ctx.strokeStyle = "#FFFFFF";
-        ctx.lineWidth = 1.2;
-        ctx.strokeRect(vx - (rectSize / 2), vy - (rectSize / 2), rectSize, rectSize);
+        ctx.lineWidth = 1.1;
+        ctx.strokeRect(vx - (rectSize / 2) + 1, vy - (rectSize / 2) + 1, rectSize + 1, rectSize + 1);
 
         // 4. Click Navigation Logic
         cvs.onclick = (e) => {
@@ -1028,7 +1036,7 @@ renderMap: function () {
         };
     },
 
-showMapTooltip: function (x, y) {
+    showMapTooltip: function (x, y) {
         let tt = document.getElementById('map-tooltip');
         if (!tt) {
             tt = document.createElement('div');
@@ -1049,12 +1057,12 @@ showMapTooltip: function (x, y) {
 
         // 2. Logic: Show Total Points only if NOT Barbarian
         let totalPointsHtml = "";
-        
+
         if (v.owner !== 'barbarian') {
             const totalPoints = state.villages
                 .filter(vil => vil.owner === v.owner)
                 .reduce((sum, vil) => sum + (vil.points || 0), 0);
-            
+
             totalPointsHtml = `
             <div class="tt-row">
                 <span style="color:#aaa">Owner Total:</span>
@@ -1088,7 +1096,7 @@ showMapTooltip: function (x, y) {
         // Offset by 15px so it doesn't cover the cursor
         const x = e.clientX + 15;
         const y = e.clientY + 15;
-        
+
         // Prevent going off-screen (Right/Bottom edges)
         // (Simple check, can be expanded)
         tt.style.left = x + 'px';
@@ -1098,7 +1106,7 @@ showMapTooltip: function (x, y) {
     // Hide it
     hideMapTooltip: function () {
         const tt = document.getElementById('map-tooltip');
-        if(tt) tt.style.display = 'none';
+        if (tt) tt.style.display = 'none';
     },
 
     updateMissions: function () {
@@ -1425,5 +1433,121 @@ showMapTooltip: function (x, y) {
         // We can rely on the renderMap center highlight, 
         // or add a temporary flash effect if you like.
         console.log(`Jumping to ${x},${y}`);
+    },
+
+    renderOverview: function () {
+        const container = document.getElementById('overview-list');
+        if (!container) return;
+
+        const myVillages = state.villages.filter(v => v.owner === 'player');
+
+        // 1. Build Header
+        let html = `
+        <table class="rank-table" style="width:100%; min-width:1000px;">
+            <thead>
+                <tr>
+                    <th style="width:20%">Village</th>
+                    <th style="width:15%">Resources</th>
+                    <th style="width:8%">Pop</th>
+                    <th style="width:22%">Buildings</th>
+                    <th style="width:35%">Troops</th>
+                </tr>
+            </thead>
+            <tbody>
+        `;
+
+        // 2. Build Rows
+        myVillages.forEach(v => {
+            const isSelected = v.id === state.selectedVillageId;
+            const bg = isSelected ? "background:#e3f2fd;" : "";
+            const border = isSelected ? "border-left: 4px solid #2196F3;" : "";
+
+            // --- Resources ---
+            const storage = engine.getStorage(v);
+            const resHtml = [0, 1, 2].map(i => {
+                const val = Math.floor(v.res[i]);
+                const isFull = val >= storage;
+                const color = isFull ? "#d32f2f" : "#333";
+                const icon = ["🌲", "🧱", "🔩"][i];
+                return `<span style="color:${color}; margin-right:5px;">${icon} ${val.toLocaleString()}</span>`;
+            }).join("");
+
+            // --- Population ---
+            const popUsed = engine.getPopUsed(v);
+            const popMax = engine.getPopLimit(v);
+            const popPerc = Math.round((popUsed / popMax) * 100);
+            const popColor = popPerc > 90 ? "#d32f2f" : "#333";
+
+            // --- Buildings ---
+            const b = v.buildings;
+            const mkB = (icon, name) => {
+                const lvl = b[name] || 0;
+                if (lvl === 0 && name !== 'Headquarters') return `<span style="opacity:0.2; margin-right:4px;">${icon}0</span>`;
+                return `<span title="${name}" style="margin-right:4px; cursor:help;">${icon}${lvl}</span>`;
+            };
+
+            const bldgs = `
+                ${mkB('🏛️', 'Headquarters')}
+                ${mkB('⚔️', 'Barracks')}
+                ${mkB('🐴', 'Stable')}
+                ${mkB('🔧', 'Workshop')}
+                ${mkB('⚒️', 'Smithy')}
+                ${mkB('⚖️', 'Market')}
+                ${mkB('🌾', 'Farm')}
+                ${mkB('📦', 'Warehouse')}
+                ${mkB('🧱', 'Wall')}
+            `;
+
+            // --- Troops (Exact Unit Counts) ---
+            // Define icons for mapping (fallback to first letter if missing)
+            const unitIcons = {
+                "Spear": "🔱", "Sword": "🗡️", "Axe": "🪓", "Archer": "🏹",
+                "Scout": "♘", "Light Cav": "🐴", "Heavy Cav": "♞",
+                "Ram": "🐏", "Catapult": "☄️", "Noble": "👑", "Paladin": "⚜️"
+            };
+
+let troopHtml = `<div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">`;
+            let hasTroops = false;
+
+            for (let u in DB.units) {
+                const count = v.units[u] || 0;
+                if (count > 0) {
+                    hasTroops = true;
+                    const icon = unitIcons[u] || u.substring(0, 2);
+                    
+                    // Display: Icon + Number inline
+                    troopHtml += `
+                        <span style="font-size:11px; white-space:nowrap; cursor:help;" title="${u}">
+                            ${icon} ${count.toLocaleString()}
+                        </span>
+                    `;
+                }
+            }
+            troopHtml += `</div>`;
+
+            if (!hasTroops) troopHtml = "<span style='color:#ccc; font-size:10px;'>- Empty -</span>";
+
+            // Queue Indicator
+            const busy = v.queues.build.length > 0 ? "🔨" : "";
+
+            html += `
+            <tr style="${bg} ${border} cursor:pointer; transition:0.2s; border-bottom:1px solid #eee;" 
+                onclick="ui.switchVillage('${v.id}')"
+                onmouseenter="this.style.backgroundColor='#f0f0f0'"
+                onmouseleave="this.style.backgroundColor='${isSelected ? '#e3f2fd' : 'transparent'}'">
+                
+                <td style="vertical-align:top; padding:8px;">
+                    <span style="font-weight:bold;">${v.name} ${busy}</span>
+                    <span style="font-size:10px; color:#666;">(${v.x}|${v.y}) • ${v.points} pts</span>
+                </td>
+                <td style="vertical-align:top; font-size:11px; padding:8px;">${resHtml}</td>
+                <td style="vertical-align:top; font-size:11px; color:${popColor}; padding:8px;">${popUsed}/${popMax}</td>
+                <td style="vertical-align:top; font-size:11px; padding:8px;">${bldgs}</td>
+                <td style="vertical-align:top; padding:6px;">${troopHtml}</td>
+            </tr>`;
+        });
+
+        html += `</tbody></table>`;
+        container.innerHTML = html;
     },
 };

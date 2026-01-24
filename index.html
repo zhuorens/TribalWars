@@ -35,12 +35,21 @@
         <button id="tab-hq" class="tab-btn active" onclick="ui.showTab('hq', this)">Village</button>
         <button id="tab-recruit" class="tab-btn" onclick="ui.showTab('recruit', this)">Recruit</button>
         <button id="tab-map" class="tab-btn" onclick="ui.showTab('map', this)">Map</button>
+        <button id="tab-overview" class="tab-btn" onclick="ui.showTab('overview', this)">📊 Overview</button>
         <button id="tab-reports" class="tab-btn" onclick="ui.showTab('reports', this)">Reports</button>
         <button id="tab-rankings" class="tab-btn" onclick="ui.showTab('rankings', this)">Rankings</button>
         <button id="tab-settings" class="tab-btn" onclick="ui.showTab('settings', this)">Settings</button>
     </div>
 
     <div class="container">
+
+        <div id="overview" class="tab-content">
+            <div style="padding:10px; background:#fff; border-bottom:1px solid #ccc;">
+                <h3 style="margin:0;">Village Overview</h3>
+                <small style="color:#666">Click a row to manage that village.</small>
+            </div>
+            <div id="overview-list" style="overflow-x:auto;"></div>
+        </div>
 
         <div id="hq" class="tab-content active" style="height: 600px;">
             <div id="village-map" class="village-map"></div>
@@ -80,10 +89,6 @@
                 </div>
             </div>
 
-            <div style="text-align:center; margin-top:10px;">
-                <span lang="en">Center:</span><span lang="zh">中心:</span>
-                <b id="map-center-coords">100|100</b>
-            </div>
             <div id="active-missions"></div>
         </div>
 

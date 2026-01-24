@@ -509,17 +509,37 @@ const engine = {
 
             // 1. GROWTH (Buildings)
             if (isAi || isBarb) {
-                const growthChance = isAi ? 0.80 : 0.3; // High chance for active world
+                const growthChance = isAi ? 0.9 : 0.3; // High chance for active world
                 if (Math.random() < growthChance) {
 
-                    // IMPROVEMENT: Filter list to find ONLY valid upgrades
+                    // 1. Get Storage Capacity
+                    const storageCap = engine.getStorage(v);
+
+                    // 2. Filter: Valid Level AND Affordable Storage
                     const validUpgrades = Object.keys(DB.buildings).filter(bKey => {
                         const currentLvl = v.buildings[bKey] || 0;
-                        const maxLvl = DB.buildings[bKey].maxLevel || 30;
-                        return currentLvl < maxLvl;
+                        const d = DB.buildings[bKey];
+                        const maxLvl = d.maxLevel || 30;
+
+                        // Check Max Level
+                        if (currentLvl >= maxLvl) return false;
+
+                        // Check Storage Cap
+                        // Calculate cost for the NEXT level (currentLvl)
+                        // Note: If level is 0, cost is base. If level is 1, cost is base * factor^1, etc.
+                        const nextCost = [
+                            Math.floor(d.base[0] * Math.pow(d.factor, currentLvl)),
+                            Math.floor(d.base[1] * Math.pow(d.factor, currentLvl)),
+                            Math.floor(d.base[2] * Math.pow(d.factor, currentLvl))
+                        ];
+
+                        // Find the highest resource cost (e.g., if Wood is 5000 but storage is 4000, we can't build)
+                        const maxResNeeded = Math.max(nextCost[0], nextCost[1], nextCost[2]);
+
+                        return maxResNeeded <= storageCap;
                     });
 
-                    // Only proceed if there is something to upgrade
+                    // 3. Execute Upgrade
                     if (validUpgrades.length > 0) {
                         const randBuild = validUpgrades[Math.floor(Math.random() * validUpgrades.length)];
 
@@ -552,7 +572,7 @@ const engine = {
             }
 
             // 3. CONQUEST (The Dice Roll)
-            if (isAi && Math.random() < 0.03 && v.buildings["Academy"] > 0) {
+            if (isAi && Math.random() < 0.04 && v.buildings["Academy"] > 0) {
                 const range = 7;
                 const targets = state.villages.filter(t =>
                     Math.abs(t.x - v.x) <= range &&
