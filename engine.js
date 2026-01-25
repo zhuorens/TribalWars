@@ -467,18 +467,6 @@ const engine = {
             });
         });
 
-        // --- 3. AI Attacks (Player Harassment) ---
-        // This targets the PLAYER specifically, separate from World Simulation
-        if (CONFIG.aiAttackEnabled) {
-            if (!state.nextAiCheck) state.nextAiCheck = now + CONFIG.aiAttackInterval;
-            if (now > state.nextAiCheck) {
-                state.nextAiCheck = now + CONFIG.aiAttackInterval;
-                if (Math.random() < CONFIG.aiAttackChance) {
-                    engine.spawnAiAttack();
-                }
-            }
-        }
-
         // --- 4. Missions ---
         state.missions = state.missions.filter(m => {
             if (now >= m.arrival) { engine.resolveMission(m); return false; }
@@ -490,6 +478,26 @@ const engine = {
 
     processAiTurn: function () {
         const now = Date.now();
+
+        // --- 1. AI ATTACKS PLAYER CHECK (Independent Timer) ---
+        // This runs independently of the village growth simulation
+        if (CONFIG.aiAttackEnabled) {
+            if (!state.nextAiCheck) state.nextAiCheck = now + CONFIG.aiAttackInterval;
+
+            if (now > state.nextAiCheck) {
+                state.nextAiCheck = now + CONFIG.aiAttackInterval;
+
+                // Roll dice to see if an AI sends an attack against the player
+                if (Math.random() < CONFIG.aiAttackChance) {
+                    if (engine.spawnAiAttack) { // Safety check
+                        engine.spawnAiAttack();
+                    }
+                }
+            }
+        }
+
+        // --- 2. WORLD SIMULATION (Growth, Recruitment, Conquest) ---
+        // This runs less frequently to save performance (defined by aiUpdateInterval)
         if (!state.lastAiUpdate) {
             state.lastAiUpdate = now;
             return;
@@ -507,9 +515,9 @@ const engine = {
 
             const isBarb = v.owner === 'barbarian';
 
-            // 1. GROWTH (Buildings)
+            // A. GROWTH (Buildings)
             if (isAi || isBarb) {
-                const growthChance = isAi ? 0.9 : 0.3; // High chance for active world
+                const growthChance = isAi ? 0.85 : 0.3; // High chance for active world
                 if (Math.random() < growthChance) {
 
                     // 1. Get Storage Capacity
@@ -525,15 +533,14 @@ const engine = {
                         if (currentLvl >= maxLvl) return false;
 
                         // Check Storage Cap
-                        // Calculate cost for the NEXT level (currentLvl)
-                        // Note: If level is 0, cost is base. If level is 1, cost is base * factor^1, etc.
+                        // Calculate cost for the NEXT level
                         const nextCost = [
                             Math.floor(d.base[0] * Math.pow(d.factor, currentLvl)),
                             Math.floor(d.base[1] * Math.pow(d.factor, currentLvl)),
                             Math.floor(d.base[2] * Math.pow(d.factor, currentLvl))
                         ];
 
-                        // Find the highest resource cost (e.g., if Wood is 5000 but storage is 4000, we can't build)
+                        // Find the highest resource cost
                         const maxResNeeded = Math.max(nextCost[0], nextCost[1], nextCost[2]);
 
                         return maxResNeeded <= storageCap;
@@ -554,7 +561,7 @@ const engine = {
                 }
             }
 
-            // 2. RECRUITMENT (Units) - MOVED FROM TICK
+            // B. RECRUITMENT (Units)
             // Only AI Warlords build armies (Barbarians are passive farms)
             if (isAi && Math.random() < 0.25) {
                 const MAX_AI_UNITS = v.points / 2; // Simple cap based on points
@@ -571,7 +578,7 @@ const engine = {
                 }
             }
 
-            // 3. CONQUEST (The Dice Roll)
+            // C. CONQUEST (AI vs AI)
             if (isAi && Math.random() < 0.04 && v.buildings["Academy"] > 0) {
                 const range = 7;
                 const targets = state.villages.filter(t =>
@@ -579,7 +586,7 @@ const engine = {
                     Math.abs(t.y - v.y) <= range &&
                     t.id !== v.id &&
                     t.owner !== v.owner &&
-                    t.owner !== 'player' // <--- ADD THIS SAFETY CHECK
+                    t.owner !== 'player' // AI will not auto-conquer Player in "Simulation mode"
                 );
 
                 if (targets.length > 0) {
@@ -599,6 +606,12 @@ const engine = {
 
                         // Recalculate points for target just in case
                         target.points = engine.calculatePoints(target);
+
+                        // Update visual map data
+                        if (state.mapData[`${target.x},${target.y}`]) {
+                            state.mapData[`${target.x},${target.y}`].type = 'enemy';
+                            state.mapData[`${target.x},${target.y}`].points = target.points;
+                        }
                     }
                 }
             }

@@ -11,7 +11,7 @@ const ui = {
         ui.initCheatDropdown();
         ui.updateInterfaceText();
         ui.refresh();
-        ui.showTab('hq', document.querySelector('.tab-btn'));
+        ui.showTab('hq', document.getElementById('tab-hq'));
     },
 
     initCheatDropdown: function () {
@@ -454,7 +454,7 @@ const ui = {
         let buttons = `<button class="btn btn-red" onclick="ui.closeAttackModal()">${T('btn_cancel')}</button>`;
 
         if (isMyVillage) {
-            buttons += `<button class="btn" onclick="ui.switchVillage('${target.id}'); ui.closeAttackModal(); ui.showTab('hq', document.querySelector('.tab-btn'));">${T('btn_return') || "Enter Village"}</button>`;
+            buttons += `<button class="btn" onclick="ui.switchVillage('${target.id}'); ui.closeAttackModal(); ui.showTab('hq', document.getElementById('tab-hq'));">${T('btn_return') || "Enter Village"}</button>`;
         } else {
             buttons += `<button class="btn" onclick="game.launchAttack('attack')">⚔️ ${T('attack')}</button>`;
         }
@@ -1442,6 +1442,7 @@ const ui = {
         const myVillages = state.villages.filter(v => v.owner === 'player');
 
         // 1. Build Header
+        // Adjusted widths to fit the new 'Actions' column
         let html = `
         <table class="rank-table" style="width:100%; min-width:1000px;">
             <thead>
@@ -1449,8 +1450,9 @@ const ui = {
                     <th style="width:20%">Village</th>
                     <th style="width:15%">Resources</th>
                     <th style="width:8%">Pop</th>
-                    <th style="width:22%">Buildings</th>
-                    <th style="width:35%">Troops</th>
+                    <th style="width:20%">Buildings</th>
+                    <th style="width:27%">Troops</th>
+                    <th style="width:10%">Actions</th> 
                 </tr>
             </thead>
             <tbody>
@@ -1463,7 +1465,9 @@ const ui = {
             const border = isSelected ? "border-left: 4px solid #2196F3;" : "";
 
             // --- Resources ---
-            const storage = engine.getStorage(v);
+            // Use getStorageLimit if getStorage doesn't exist, fallback safely
+            const storage = (engine.getStorageLimit) ? engine.getStorageLimit(v) : (engine.getStorage ? engine.getStorage(v) : 1000);
+
             const resHtml = [0, 1, 2].map(i => {
                 const val = Math.floor(v.res[i]);
                 const isFull = val >= storage;
@@ -1498,15 +1502,14 @@ const ui = {
                 ${mkB('🧱', 'Wall')}
             `;
 
-            // --- Troops (Exact Unit Counts) ---
-            // Define icons for mapping (fallback to first letter if missing)
+            // --- Troops ---
             const unitIcons = {
                 "Spear": "🔱", "Sword": "🗡️", "Axe": "🪓", "Archer": "🏹",
                 "Scout": "♘", "Light Cav": "🐴", "Heavy Cav": "♞",
                 "Ram": "🐏", "Catapult": "☄️", "Noble": "👑", "Paladin": "⚜️"
             };
 
-let troopHtml = `<div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">`;
+            let troopHtml = `<div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">`;
             let hasTroops = false;
 
             for (let u in DB.units) {
@@ -1514,8 +1517,6 @@ let troopHtml = `<div style="display:flex; flex-wrap:wrap; gap:10px; align-items
                 if (count > 0) {
                     hasTroops = true;
                     const icon = unitIcons[u] || u.substring(0, 2);
-                    
-                    // Display: Icon + Number inline
                     troopHtml += `
                         <span style="font-size:11px; white-space:nowrap; cursor:help;" title="${u}">
                             ${icon} ${count.toLocaleString()}
@@ -1524,11 +1525,24 @@ let troopHtml = `<div style="display:flex; flex-wrap:wrap; gap:10px; align-items
                 }
             }
             troopHtml += `</div>`;
-
             if (!hasTroops) troopHtml = "<span style='color:#ccc; font-size:10px;'>- Empty -</span>";
 
             // Queue Indicator
             const busy = v.queues.build.length > 0 ? "🔨" : "";
+
+            // --- ACTION BUTTON (New) ---
+            let actionHtml = "";
+            if (isSelected) {
+                actionHtml = `<span style="color:#aaa; font-size:10px; font-style:italic;">(Current)</span>`;
+            } else {
+                // STOP PROPAGATION is key here: Prevents switching village when clicking the button
+                actionHtml = `
+                    <button class="btn-mini" style="background:#4CAF50; color:white; border:none; padding:4px 8px; cursor:pointer; border-radius:3px;" 
+                        onclick="event.stopPropagation(); ui.openMarketModal('${v.id}')">
+                        🛒 Transport
+                    </button>
+                `;
+            }
 
             html += `
             <tr style="${bg} ${border} cursor:pointer; transition:0.2s; border-bottom:1px solid #eee;" 
@@ -1538,12 +1552,13 @@ let troopHtml = `<div style="display:flex; flex-wrap:wrap; gap:10px; align-items
                 
                 <td style="vertical-align:top; padding:8px;">
                     <span style="font-weight:bold;">${v.name} ${busy}</span>
-                    <span style="font-size:10px; color:#666;">(${v.x}|${v.y}) • ${v.points} pts</span>
+                    <div style="font-size:10px; color:#666;">(${v.x}|${v.y}) • ${v.points} pts</div>
                 </td>
                 <td style="vertical-align:top; font-size:11px; padding:8px;">${resHtml}</td>
                 <td style="vertical-align:top; font-size:11px; color:${popColor}; padding:8px;">${popUsed}/${popMax}</td>
                 <td style="vertical-align:top; font-size:11px; padding:8px;">${bldgs}</td>
                 <td style="vertical-align:top; padding:6px;">${troopHtml}</td>
+                <td style="vertical-align:middle; text-align:center;">${actionHtml}</td>
             </tr>`;
         });
 

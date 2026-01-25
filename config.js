@@ -12,7 +12,7 @@ const CONFIG = {
     aiAttackChance: 0.3, // 30% chance to attack when interval hits
     aiAttackRange: 15, // Max distance tiles
     aiAttackStrength: 0.4, // Multiplier relative to player points (0.5 = 50% of player strength)
-    aiUpdateInterval: 50 * 60 * 1000, 
+    aiUpdateInterval: 40 * 60 * 1000, 
 };
 
 // --- HELPER: Time Formatting ---
