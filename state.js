@@ -10,5 +10,6 @@ let state = {
     lastAiUpdate: Date.now(),
     debugFastTravel: false,
     selectedVillageId: null,
-    lang: "en"
+    lang: "en",
+    aiProcessingIndex: 0
 };

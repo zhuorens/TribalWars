@@ -8,11 +8,14 @@ const CONFIG = {
     buildQueueLimit: 5,
     
     aiAttackEnabled: true,
-    aiAttackInterval: 100 * 60 * 1000, // Check for attack every 10 minutes
+    aiAttackInterval: 200 * 60 * 1000, // Check for attack every 10 minutes
     aiAttackChance: 0.3, // 30% chance to attack when interval hits
     aiAttackRange: 15, // Max distance tiles
     aiAttackStrength: 0.4, // Multiplier relative to player points (0.5 = 50% of player strength)
-    aiUpdateInterval: 40 * 60 * 1000, 
+
+    aiUpdateInterval: 25000,
+    aiBatchSize: 50,
+    aiEliminationInterval: 75000
 };
 
 // --- HELPER: Time Formatting ---

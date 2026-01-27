@@ -105,10 +105,10 @@ cancel: function (queueType, idx) {
         const popAvail = engine.getPopLimit(v) - engine.getPopUsed(v);
         
         // Calculate Incremental Pop Needed
-        const nextTotalPop = Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl + 1));
+        const nextTotalPop = Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl));
         const currentTotalPop = (virtualLvl === 0) 
             ? 0 
-            : Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl));
+            : Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl - 1));
         
         const popNeeded = Math.max(0, nextTotalPop - currentTotalPop);
 

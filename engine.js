@@ -479,155 +479,164 @@ const engine = {
     processAiTurn: function () {
         const now = Date.now();
 
-        // --- 1. AI ATTACKS PLAYER CHECK (Independent Timer) ---
-        // This runs independently of the village growth simulation
+        // --- 1. AI ATTACK CHECK (Fast: Every ~10s) ---
         if (CONFIG.aiAttackEnabled) {
             if (!state.nextAiCheck) state.nextAiCheck = now + CONFIG.aiAttackInterval;
-
             if (now > state.nextAiCheck) {
                 state.nextAiCheck = now + CONFIG.aiAttackInterval;
-
-                // Roll dice to see if an AI sends an attack against the player
                 if (Math.random() < CONFIG.aiAttackChance) {
-                    if (engine.spawnAiAttack) { // Safety check
-                        engine.spawnAiAttack();
-                    }
+                    engine.spawnAiAttack();
                 }
             }
         }
 
-        // --- 2. WORLD SIMULATION (Growth, Recruitment, Conquest) ---
-        // This runs less frequently to save performance (defined by aiUpdateInterval)
-        if (!state.lastAiUpdate) {
+        // --- 2. WORLD SIMULATION (Batch: Every ~5s) ---
+        if (!state.lastAiUpdate) state.lastAiUpdate = now;
+
+        // Only run batch if enough time passed
+        if (now - state.lastAiUpdate >= CONFIG.aiUpdateInterval) {
             state.lastAiUpdate = now;
-            return;
-        }
-        if (now - state.lastAiUpdate < CONFIG.aiUpdateInterval) return;
 
-        state.lastAiUpdate = now;
-        console.log("⚔️ Running AI World Simulation...");
+            if (typeof state.aiProcessingIndex === 'undefined') state.aiProcessingIndex = 0;
 
-        const activeOwners = new Set();
+            const villages = state.villages;
+            const batchLimit = CONFIG.aiBatchSize || 10;
+            let processed = 0;
 
-        state.villages.forEach(v => {
-            const isAi = v.owner.startsWith('ai_');
-            if (isAi) activeOwners.add(v.owner);
+            while (processed < batchLimit) {
+                if (state.aiProcessingIndex >= villages.length) state.aiProcessingIndex = 0;
 
-            const isBarb = v.owner === 'barbarian';
+                const v = villages[state.aiProcessingIndex];
+                state.aiProcessingIndex++;
+                processed++;
 
-            // A. GROWTH (Buildings)
-            if (isAi || isBarb) {
-                const growthChance = isAi ? 0.85 : 0.3; // High chance for active world
+                if (!v) continue;
+
+                const isAi = v.owner.startsWith('ai_');
+                const isBarb = v.owner === 'barbarian';
+
+                if (!isAi && !isBarb) continue;
+
+                // A. GROWTH
+                let growthChance = 0.3;
+                if (isAi) {
+                    growthChance = 1.1 - (v.points * 0.0001);
+                    growthChance = Math.max(0.1, Math.min(1.0, growthChance));
+                }
+
                 if (Math.random() < growthChance) {
-
-                    // 1. Get Storage Capacity
                     const storageCap = engine.getStorage(v);
+                    const popAvail = engine.getPopLimit(v) - engine.getPopUsed(v);
 
-                    // 2. Filter: Valid Level AND Affordable Storage
                     const validUpgrades = Object.keys(DB.buildings).filter(bKey => {
                         const currentLvl = v.buildings[bKey] || 0;
                         const d = DB.buildings[bKey];
-                        const maxLvl = d.maxLevel || 30;
+                        if (currentLvl >= (d.maxLevel || 30)) return false;
 
-                        // Check Max Level
-                        if (currentLvl >= maxLvl) return false;
-
-                        // Check Storage Cap
-                        // Calculate cost for the NEXT level
-                        const nextCost = [
-                            Math.floor(d.base[0] * Math.pow(d.factor, currentLvl)),
-                            Math.floor(d.base[1] * Math.pow(d.factor, currentLvl)),
-                            Math.floor(d.base[2] * Math.pow(d.factor, currentLvl))
+                        const factor = Math.pow(d.factor, currentLvl);
+                        const cost = [
+                            Math.floor(d.base[0] * factor),
+                            Math.floor(d.base[1] * factor),
+                            Math.floor(d.base[2] * factor)
                         ];
 
-                        // Find the highest resource cost
-                        const maxResNeeded = Math.max(nextCost[0], nextCost[1], nextCost[2]);
+                        if (Math.max(...cost) > storageCap) return false;
 
-                        return maxResNeeded <= storageCap;
+                        if (bKey !== "Farm") {
+                            const nextPop = Math.round((d.basePop || 0) * Math.pow(d.factor, currentLvl + 1));
+                            const curPop = (currentLvl === 0) ? 0 : Math.round((d.basePop || 0) * factor);
+                            if ((nextPop - curPop) > popAvail) return false;
+                        }
+                        return true;
                     });
 
-                    // 3. Execute Upgrade
                     if (validUpgrades.length > 0) {
                         const randBuild = validUpgrades[Math.floor(Math.random() * validUpgrades.length)];
-
                         v.buildings[randBuild] = (v.buildings[randBuild] || 0) + 1;
                         v.points = engine.calculatePoints(v);
+                        if (state.mapData[`${v.x},${v.y}`]) state.mapData[`${v.x},${v.y}`].points = v.points;
+                    }
+                }
 
-                        // Update Map Cache
-                        if (state.mapData[`${v.x},${v.y}`]) {
-                            state.mapData[`${v.x},${v.y}`].points = v.points;
+                // B. RECRUITMENT
+                if (isAi && Math.random() < 0.25) {
+                    const MAX_UNITS = v.points / 2;
+                    if ((v.units["Spear"] || 0) < MAX_UNITS) v.units["Spear"] = (v.units["Spear"] || 0) + 10;
+                    if ((v.units["Sword"] || 0) < MAX_UNITS) v.units["Sword"] = (v.units["Sword"] || 0) + 10;
+                    if (v.buildings["Stable"] > 0) v.units["Light Cav"] = (v.units["Light Cav"] || 0) + 2;
+                }
+
+                // C. CONQUEST
+                if (isAi && Math.random() < 0.025 && v.buildings["Academy"] > 0 && engine.getStorage(v) >= 50000) {
+                    const range = 7;
+                    const targets = state.villages.filter(t =>
+                        Math.abs(t.x - v.x) <= range &&
+                        Math.abs(t.y - v.y) <= range &&
+                        t.id !== v.id &&
+                        t.owner !== v.owner &&
+                        t.owner !== 'player'
+                    );
+
+                    if (targets.length > 0) {
+                        const target = targets[Math.floor(Math.random() * targets.length)];
+                        const attScore = v.points * (0.8 + Math.random());
+                        const wallBonus = 1 + ((target.buildings["Wall"] || 0) * 0.1);
+
+                        if (attScore > target.points * wallBonus) {
+                            target.owner = v.owner;
+                            target.loyalty = 25;
+                            target.buildings["Wall"] = Math.max(0, (target.buildings["Wall"] || 0) - 2);
+                            target.points = engine.calculatePoints(target);
+                            if (state.mapData[`${target.x},${target.y}`]) {
+                                state.mapData[`${target.x},${target.y}`].type = 'enemy';
+                                state.mapData[`${target.x},${target.y}`].points = target.points;
+                            }
                         }
                     }
                 }
-            }
+            } // End Batch Loop
 
-            // B. RECRUITMENT (Units)
-            // Only AI Warlords build armies (Barbarians are passive farms)
-            if (isAi && Math.random() < 0.25) {
-                const MAX_AI_UNITS = v.points / 2; // Simple cap based on points
-                const currentSpear = v.units["Spear"] || 0;
-                const currentSword = v.units["Sword"] || 0;
-
-                // Add small batches
-                if (currentSpear < MAX_AI_UNITS) v.units["Spear"] = currentSpear + 10;
-                if (currentSword < MAX_AI_UNITS) v.units["Sword"] = currentSword + 10;
-
-                // Occasional Offensive Units
-                if (v.buildings["Stable"] > 0) {
-                    v.units["Light Cav"] = (v.units["Light Cav"] || 0) + 2;
-                }
-            }
-
-            // C. CONQUEST (AI vs AI)
-            if (isAi && Math.random() < 0.04 && v.buildings["Academy"] > 0) {
-                const range = 7;
-                const targets = state.villages.filter(t =>
-                    Math.abs(t.x - v.x) <= range &&
-                    Math.abs(t.y - v.y) <= range &&
-                    t.id !== v.id &&
-                    t.owner !== v.owner &&
-                    t.owner !== 'player' // AI will not auto-conquer Player in "Simulation mode"
-                );
-
-                if (targets.length > 0) {
-                    const target = targets[Math.floor(Math.random() * targets.length)];
-
-                    const attScore = v.points * (0.8 + Math.random());
-                    const wallLvl = target.buildings["Wall"] || 0;
-                    const wallBonus = 1 + (wallLvl * 0.1);
-                    const defScore = target.points * wallBonus;
-
-                    if (attScore > defScore) {
-                        // Success
-                        const winnerId = v.owner;
-                        target.owner = winnerId;
-                        target.loyalty = 25;
-                        target.buildings["Wall"] = Math.max(0, wallLvl - 2);
-
-                        // Recalculate points for target just in case
-                        target.points = engine.calculatePoints(target);
-
-                        // Update visual map data
-                        if (state.mapData[`${target.x},${target.y}`]) {
-                            state.mapData[`${target.x},${target.y}`].type = 'enemy';
-                            state.mapData[`${target.x},${target.y}`].points = target.points;
-                        }
-                    }
-                }
-            }
-        });
-
-        // 4. ELIMINATION CHECK
-        for (let id in state.playerProfiles) {
-            if (id === 'player' || id === 'barbarian') continue;
-            if (!activeOwners.has(id) && state.playerProfiles[id].alive) {
-                state.playerProfiles[id].alive = false;
+            // Refresh Map
+            if (document.getElementById('map').classList.contains('active')) {
+                ui.renderMap();
+                ui.renderMinimap();
             }
         }
 
-        if (document.getElementById('map').classList.contains('active')) {
-            ui.renderMap();
-            ui.renderMinimap();
+        // --- 3. ELIMINATION CHECK (Slow: Every ~60s) ---
+        // This MUST loop all villages to be accurate, so we run it rarely.
+        if (!state.nextElimCheck) state.nextElimCheck = now + CONFIG.aiEliminationInterval;
+
+        if (now > state.nextElimCheck) {
+            state.nextElimCheck = now + CONFIG.aiEliminationInterval;
+            console.log("💀 Checking for Eliminated Factions...");
+
+            const activeOwners = new Set();
+
+            // 1. Scan ALL villages (Fast enough if done once per minute)
+            state.villages.forEach(v => {
+                if (v.owner !== 'barbarian' && v.owner !== 'player') {
+                    activeOwners.add(v.owner);
+                }
+            });
+
+            // 2. Mark dead profiles
+            let killed = 0;
+            for (let id in state.playerProfiles) {
+                if (id === 'player' || id === 'barbarian') continue;
+
+                // If they were alive, but have no villages now -> They are dead
+                if (state.playerProfiles[id].alive && !activeOwners.has(id)) {
+                    state.playerProfiles[id].alive = false;
+                    killed++;
+                    console.log(`☠️ ${state.playerProfiles[id].name} has been eliminated.`);
+                }
+            }
+
+            // 3. Update Rankings if anyone died
+            if (killed > 0 && ui.activeTab === 'rankings') {
+                ui.renderRankingTab();
+            }
         }
     },
 
@@ -1138,7 +1147,7 @@ const engine = {
 
         // 4. Launch Mission
         const dist = Math.sqrt(Math.pow(origin.x - target.x, 2) + Math.pow(origin.y - target.y, 2));
-        const duration = dist * 60 * 1000; // 1 minute per tile (standard speed)
+        const duration = dist * 600 * 1000;
 
         state.missions.push({
             originId: origin.id,

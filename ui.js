@@ -1435,39 +1435,61 @@ const ui = {
         console.log(`Jumping to ${x},${y}`);
     },
 
-    renderOverview: function () {
+renderOverview: function () {
         const container = document.getElementById('overview-list');
         if (!container) return;
 
-        const myVillages = state.villages.filter(v => v.owner === 'player');
+        // 1. Filter Player Villages
+        let myVillages = state.villages.filter(v => v.owner === 'player');
 
-        // 1. Build Header
-        // Adjusted widths to fit the new 'Actions' column
+        // 2. Apply Sorting
+        const sortKey = this.overviewSort.key; // 'name' or 'points'
+        const order = this.overviewSort.asc ? 1 : -1;
+
+        myVillages.sort((a, b) => {
+            if (sortKey === 'points') {
+                return (a.points - b.points) * order;
+            } else {
+                return a.name.localeCompare(b.name) * order;
+            }
+        });
+
+        // 3. Helper for Header Icons
+        const getSortIcon = (key) => {
+            if (this.overviewSort.key !== key) return `<span style="opacity:0.3">↕</span>`;
+            return this.overviewSort.asc ? "▲" : "▼";
+        };
+
+        // 4. Build Header
+        // Added 'cursor:pointer' to sortable headers
         let html = `
         <table class="rank-table" style="width:100%; min-width:1000px;">
             <thead>
                 <tr>
-                    <th style="width:20%">Village</th>
-                    <th style="width:15%">Resources</th>
-                    <th style="width:8%">Pop</th>
-                    <th style="width:20%">Buildings</th>
-                    <th style="width:27%">Troops</th>
-                    <th style="width:10%">Actions</th> 
+                    <th style="width:15%; cursor:pointer;" onclick="ui.toggleOverviewSort('name')">
+                        Village ${getSortIcon('name')}
+                    </th>
+                    <th style="width:6%; cursor:pointer;" onclick="ui.toggleOverviewSort('points')">
+                        Points ${getSortIcon('points')}
+                    </th>
+                    <th style="width:14%">Resources</th>
+                    <th style="width:7%">Pop</th>
+                    <th style="width:23%">Buildings</th>
+                    <th style="width:26%">Troops</th>
+                    <th style="width:9%">Actions</th> 
                 </tr>
             </thead>
             <tbody>
         `;
 
-        // 2. Build Rows
+        // 5. Build Rows
         myVillages.forEach(v => {
             const isSelected = v.id === state.selectedVillageId;
             const bg = isSelected ? "background:#e3f2fd;" : "";
             const border = isSelected ? "border-left: 4px solid #2196F3;" : "";
 
             // --- Resources ---
-            // Use getStorageLimit if getStorage doesn't exist, fallback safely
             const storage = (engine.getStorageLimit) ? engine.getStorageLimit(v) : (engine.getStorage ? engine.getStorage(v) : 1000);
-
             const resHtml = [0, 1, 2].map(i => {
                 const val = Math.floor(v.res[i]);
                 const isFull = val >= storage;
@@ -1509,7 +1531,7 @@ const ui = {
                 "Ram": "🐏", "Catapult": "☄️", "Noble": "👑", "Paladin": "⚜️"
             };
 
-            let troopHtml = `<div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">`;
+            let troopHtml = `<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">`;
             let hasTroops = false;
 
             for (let u in DB.units) {
@@ -1530,16 +1552,15 @@ const ui = {
             // Queue Indicator
             const busy = v.queues.build.length > 0 ? "🔨" : "";
 
-            // --- ACTION BUTTON (New) ---
+            // --- Action Button ---
             let actionHtml = "";
             if (isSelected) {
                 actionHtml = `<span style="color:#aaa; font-size:10px; font-style:italic;">(Current)</span>`;
             } else {
-                // STOP PROPAGATION is key here: Prevents switching village when clicking the button
                 actionHtml = `
                     <button class="btn-mini" style="background:#4CAF50; color:white; border:none; padding:4px 8px; cursor:pointer; border-radius:3px;" 
                         onclick="event.stopPropagation(); ui.openMarketModal('${v.id}')">
-                        🛒 Transport
+                        Transport
                     </button>
                 `;
             }
@@ -1552,8 +1573,13 @@ const ui = {
                 
                 <td style="vertical-align:top; padding:8px;">
                     <span style="font-weight:bold;">${v.name} ${busy}</span>
-                    <div style="font-size:10px; color:#666;">(${v.x}|${v.y}) • ${v.points} pts</div>
+                    <span style="font-size:10px; color:#666;">(${v.x}|${v.y})</span>
                 </td>
+                
+                <td style="vertical-align:top; padding:8px; font-weight:bold; color:#555;">
+                    ${v.points.toLocaleString()}
+                </td>
+
                 <td style="vertical-align:top; font-size:11px; padding:8px;">${resHtml}</td>
                 <td style="vertical-align:top; font-size:11px; color:${popColor}; padding:8px;">${popUsed}/${popMax}</td>
                 <td style="vertical-align:top; font-size:11px; padding:8px;">${bldgs}</td>
@@ -1564,5 +1590,23 @@ const ui = {
 
         html += `</tbody></table>`;
         container.innerHTML = html;
+    },
+    // Sort State (Default)
+    overviewSort: { key: 'name', asc: true },
+
+    // Helper: Toggle Sort and Re-render
+    toggleOverviewSort: function(key) {
+        if (this.overviewSort.key === key) {
+            this.overviewSort.asc = !this.overviewSort.asc; // Toggle order
+        } else {
+            this.overviewSort.key = key;
+            this.overviewSort.asc = true; // Default to Ascending
+            
+            // UX: If sorting by points, default to Descending (Highest first) usually makes more sense, 
+            // but let's stick to true (Asc) first click or false (Desc) based on preference.
+            // Let's force 'points' to start Descending (High -> Low) as it's more standard for rankings.
+            if (key === 'points') this.overviewSort.asc = false;
+        }
+        this.renderOverview();
     },
 };
