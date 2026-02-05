@@ -580,7 +580,7 @@ const engine = {
                     if (targets.length > 0) {
                         const target = targets[Math.floor(Math.random() * targets.length)];
                         const attScore = v.points * (0.8 + Math.random());
-                        const wallBonus = 1 + ((target.buildings["Wall"] || 0) * 0.1);
+                        const wallBonus = 1 + ((target.buildings["Wall"] || 0) * 0.02);
 
                         if (attScore > target.points * wallBonus) {
                             target.owner = v.owner;

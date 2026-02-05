@@ -1387,7 +1387,7 @@ const ui = {
                 </div>
             </div>
         </div>
-        <div style="height:400px; overflow-y:auto;">
+        <div style="height:800px; overflow-y:auto;">
             <table class="rank-table">
                 <thead>
                     <tr>
@@ -1435,173 +1435,181 @@ const ui = {
         console.log(`Jumping to ${x},${y}`);
     },
 
-renderOverview: function () {
+    renderOverview: function () {
         const container = document.getElementById('overview-list');
         if (!container) return;
 
-        // 1. Filter Player Villages
+        // 1. Data Setup
         let myVillages = state.villages.filter(v => v.owner === 'player');
+        const currentVillage = engine.getCurrentVillage();
 
-        // 2. Apply Sorting
-        const sortKey = this.overviewSort.key; // 'name' or 'points'
+        // 2. Sorting
+        const sortKey = this.overviewSort.key;
         const order = this.overviewSort.asc ? 1 : -1;
 
-        myVillages.sort((a, b) => {
-            if (sortKey === 'points') {
-                return (a.points - b.points) * order;
-            } else {
-                return a.name.localeCompare(b.name) * order;
-            }
-        });
-
-        // 3. Helper for Header Icons
-        const getSortIcon = (key) => {
-            if (this.overviewSort.key !== key) return `<span style="opacity:0.3">↕</span>`;
-            return this.overviewSort.asc ? "▲" : "▼";
+        // Helper to get distance
+        const getDist = (v) => {
+            if (!currentVillage) return 0;
+            return Math.sqrt(Math.pow(v.x - currentVillage.x, 2) + Math.pow(v.y - currentVillage.y, 2));
         };
 
-        // 4. Build Header
-        // Added 'cursor:pointer' to sortable headers
+        myVillages.sort((a, b) => {
+            if (sortKey === 'points') return (a.points - b.points) * order;
+            if (sortKey === 'dist') return (getDist(a) - getDist(b)) * order;
+            return a.name.localeCompare(b.name) * order;
+        });
+
+        // 3. Header Icons
+        const getSortIcon = (key) => (this.overviewSort.key !== key) ? `<span style="opacity:0.3">↕</span>` : (this.overviewSort.asc ? "▲" : "▼");
+
+        // STYLE: Balanced Table with Distance Column
         let html = `
-        <table class="rank-table" style="width:100%; min-width:1000px;">
+        <div style="overflow-x:auto; background:#fff; border-radius:3px; box-shadow:0 1px 2px rgba(0,0,0,0.1);">
+        <table class="rank-table" style="width:100%; min-width:1200px; font-size:12px; border-collapse: collapse;">
             <thead>
-                <tr>
-                    <th style="width:15%; cursor:pointer;" onclick="ui.toggleOverviewSort('name')">
-                        Village ${getSortIcon('name')}
-                    </th>
-                    <th style="width:6%; cursor:pointer;" onclick="ui.toggleOverviewSort('points')">
-                        Points ${getSortIcon('points')}
-                    </th>
-                    <th style="width:14%">Resources</th>
-                    <th style="width:7%">Pop</th>
-                    <th style="width:23%">Buildings</th>
-                    <th style="width:26%">Troops</th>
-                    <th style="width:9%">Actions</th> 
+                <tr style="background:#f0f2f5; color:#444; border-bottom:1px solid #d1d1d1; text-align:left;">
+                    <th style="width:15%; padding:8px 8px; cursor:pointer;" onclick="ui.toggleOverviewSort('name')">Village ${getSortIcon('name')}</th>
+                    <th style="width:5%; padding:8px 8px; cursor:pointer;" onclick="ui.toggleOverviewSort('dist')">Dist ${getSortIcon('dist')}</th>
+                    <th style="width:6%; padding:8px 8px; cursor:pointer;" onclick="ui.toggleOverviewSort('points')">Pts ${getSortIcon('points')}</th>
+                    <th style="width:14%; padding:8px 8px;">Resources</th>
+                    <th style="width:6%; padding:8px 8px;">Pop</th>
+                    <th style="width:18%; padding:8px 8px;">Buildings</th>
+                    <th style="width:26%; padding:8px 8px;">Troops (Own | <span style="color:#1976D2">Support</span>)</th>
+                    <th style="width:10%; padding:8px 8px; text-align:center;">Actions</th> 
                 </tr>
             </thead>
             <tbody>
         `;
 
-        // 5. Build Rows
+        const unitIcons = {
+            "Spear": "🔱", "Sword": "🗡️", "Axe": "🪓", "Archer": "🏹",
+            "Scout": "♘", "Light Cav": "🐴", "Heavy Cav": "♞",
+            "Ram": "🐏", "Catapult": "☄️", "Noble": "👑", "Paladin": "⚜️"
+        };
+
+        // Helper: Inline Unit String
+        const renderUnitString = (unitsObj, color = "#000") => {
+            let parts = [];
+            for (let u in DB.units) {
+                const count = unitsObj[u] || 0;
+                if (count > 0) {
+                    const icon = unitIcons[u] || u.substring(0, 1);
+                    parts.push(`${icon}${count}`);
+                }
+            }
+            return parts.length > 0 ? `<span style="color:${color}; margin-right:6px;">${parts.join(" ")}</span>` : "";
+        };
+
+        // 4. Rows
         myVillages.forEach(v => {
             const isSelected = v.id === state.selectedVillageId;
-            const bg = isSelected ? "background:#e3f2fd;" : "";
-            const border = isSelected ? "border-left: 4px solid #2196F3;" : "";
+            const bg = isSelected ? "background:#e3f2fd;" : "background:#fff";
+            const border = isSelected ? "border-left: 3px solid #2196F3;" : "border-left: 3px solid transparent;";
 
-            // --- Resources ---
-            const storage = (engine.getStorageLimit) ? engine.getStorageLimit(v) : (engine.getStorage ? engine.getStorage(v) : 1000);
+            // Distance Value
+            const dist = getDist(v);
+            const distDisplay = isSelected ? "-" : dist.toFixed(1);
+
+            // Resources (Fixed: use engine.getStorage)
+            const storage = engine.getStorage(v);
             const resHtml = [0, 1, 2].map(i => {
                 const val = Math.floor(v.res[i]);
-                const isFull = val >= storage;
-                const color = isFull ? "#d32f2f" : "#333";
+                const color = (val > storage * 0.9) ? "#d32f2f" : "#333";
                 const icon = ["🌲", "🧱", "🔩"][i];
-                return `<span style="color:${color}; margin-right:5px;">${icon} ${val.toLocaleString()}</span>`;
+                return `<span style="color:${color}; margin-right:6px;">${icon}${val}</span>`;
             }).join("");
 
-            // --- Population ---
+            // Pop
             const popUsed = engine.getPopUsed(v);
             const popMax = engine.getPopLimit(v);
-            const popPerc = Math.round((popUsed / popMax) * 100);
-            const popColor = popPerc > 90 ? "#d32f2f" : "#333";
+            const popColor = (popUsed / popMax > 0.9) ? "#d32f2f" : "#444";
 
-            // --- Buildings ---
+            // Buildings
             const b = v.buildings;
             const mkB = (icon, name) => {
                 const lvl = b[name] || 0;
-                if (lvl === 0 && name !== 'Headquarters') return `<span style="opacity:0.2; margin-right:4px;">${icon}0</span>`;
-                return `<span title="${name}" style="margin-right:4px; cursor:help;">${icon}${lvl}</span>`;
+                if (lvl === 0 && name !== 'Headquarters') return "";
+                return `<span title="${name} Lv${lvl}" style="margin-right:3px; cursor:help;">${icon}${lvl}</span>`;
             };
+            const bldgs = `${mkB('🏛️', 'Headquarters')}${mkB('⚔️', 'Barracks')}${mkB('🐴', 'Stable')}${mkB('🔧', 'Workshop')}${mkB('⚒️', 'Smithy')}${mkB('⚖️', 'Market')}${mkB('🌾', 'Farm')}${mkB('📦', 'Warehouse')}${mkB('🧱', 'Wall')}`;
 
-            const bldgs = `
-                ${mkB('🏛️', 'Headquarters')}
-                ${mkB('⚔️', 'Barracks')}
-                ${mkB('🐴', 'Stable')}
-                ${mkB('🔧', 'Workshop')}
-                ${mkB('⚒️', 'Smithy')}
-                ${mkB('⚖️', 'Market')}
-                ${mkB('🌾', 'Farm')}
-                ${mkB('📦', 'Warehouse')}
-                ${mkB('🧱', 'Wall')}
-            `;
-
-            // --- Troops ---
-            const unitIcons = {
-                "Spear": "🔱", "Sword": "🗡️", "Axe": "🪓", "Archer": "🏹",
-                "Scout": "♘", "Light Cav": "🐴", "Heavy Cav": "♞",
-                "Ram": "🐏", "Catapult": "☄️", "Noble": "👑", "Paladin": "⚜️"
-            };
-
-            let troopHtml = `<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">`;
-            let hasTroops = false;
-
-            for (let u in DB.units) {
-                const count = v.units[u] || 0;
-                if (count > 0) {
-                    hasTroops = true;
-                    const icon = unitIcons[u] || u.substring(0, 2);
-                    troopHtml += `
-                        <span style="font-size:11px; white-space:nowrap; cursor:help;" title="${u}">
-                            ${icon} ${count.toLocaleString()}
-                        </span>
-                    `;
-                }
+            // Troops
+            const ownStr = renderUnitString(v.units, "#333");
+            let supStr = "";
+            if (v.stationed && v.stationed.length > 0) {
+                let totalSup = {};
+                v.stationed.forEach(s => { for (let u in s.units) totalSup[u] = (totalSup[u] || 0) + s.units[u]; });
+                supStr = renderUnitString(totalSup, "#1976D2");
             }
-            troopHtml += `</div>`;
-            if (!hasTroops) troopHtml = "<span style='color:#ccc; font-size:10px;'>- Empty -</span>";
 
-            // Queue Indicator
-            const busy = v.queues.build.length > 0 ? "🔨" : "";
+            let troopDisplay = ownStr;
+            if (ownStr && supStr) troopDisplay += ` <span style="color:#ccc; margin:0 4px;">|</span> ${supStr}`;
+            else if (!ownStr && supStr) troopDisplay = supStr;
+            else if (!ownStr && !supStr) troopDisplay = `<span style="color:#ccc">-</span>`;
 
-            // --- Action Button ---
+            // Actions
             let actionHtml = "";
             if (isSelected) {
-                actionHtml = `<span style="color:#aaa; font-size:10px; font-style:italic;">(Current)</span>`;
+                actionHtml = `<span style="color:#999; font-style:italic;">(Current)</span>`;
             } else {
                 actionHtml = `
-                    <button class="btn-mini" style="background:#4CAF50; color:white; border:none; padding:4px 8px; cursor:pointer; border-radius:3px;" 
-                        onclick="event.stopPropagation(); ui.openMarketModal('${v.id}')">
-                        Transport
-                    </button>
+                    <button class="btn-mini" style="background:#4CAF50; color:#fff; border:none; padding:3px 8px; border-radius:3px; cursor:pointer; font-size:11px;" 
+                        title="Transport" onclick="event.stopPropagation(); ui.openMarketModal('${v.id}')">🛒</button>
+                    <button class="btn-mini" style="background:#2196F3; color:#fff; border:none; padding:3px 8px; border-radius:3px; cursor:pointer; font-size:11px;" 
+                        title="Support" onclick="event.stopPropagation(); ui.openSupportModal('${v.id}')">🛡️</button>
                 `;
             }
 
-            html += `
-            <tr style="${bg} ${border} cursor:pointer; transition:0.2s; border-bottom:1px solid #eee;" 
-                onclick="ui.switchVillage('${v.id}')"
-                onmouseenter="this.style.backgroundColor='#f0f0f0'"
-                onmouseleave="this.style.backgroundColor='${isSelected ? '#e3f2fd' : 'transparent'}'">
-                
-                <td style="vertical-align:top; padding:8px;">
-                    <span style="font-weight:bold;">${v.name} ${busy}</span>
-                    <span style="font-size:10px; color:#666;">(${v.x}|${v.y})</span>
-                </td>
-                
-                <td style="vertical-align:top; padding:8px; font-weight:bold; color:#555;">
-                    ${v.points.toLocaleString()}
-                </td>
+            const busy = v.queues.build.length > 0 ? "🔨" : "";
 
-                <td style="vertical-align:top; font-size:11px; padding:8px;">${resHtml}</td>
-                <td style="vertical-align:top; font-size:11px; color:${popColor}; padding:8px;">${popUsed}/${popMax}</td>
-                <td style="vertical-align:top; font-size:11px; padding:8px;">${bldgs}</td>
-                <td style="vertical-align:top; padding:6px;">${troopHtml}</td>
-                <td style="vertical-align:middle; text-align:center;">${actionHtml}</td>
+            // --- THE ROW ---
+            html += `
+            <tr style="${bg} ${border} cursor:pointer; border-bottom:1px solid #eee; height:32px;" 
+                onclick="ui.switchVillage('${v.id}')"
+                onmouseenter="this.style.backgroundColor='#f7f7f7'"
+                onmouseleave="this.style.backgroundColor='${isSelected ? '#e3f2fd' : '#fff'}'">
+                
+                <td style="padding:0 8px; white-space:nowrap; vertical-align:middle;">
+                    <b>${v.name}</b> <span style="color:#666; font-size:10px;">(${v.x}|${v.y})</span> ${busy}
+                </td>
+                <td style="padding:0 8px; vertical-align:middle; color:#666;">${distDisplay}</td>
+                <td style="padding:0 8px; vertical-align:middle;">${v.points}</td>
+                <td style="padding:0 8px; white-space:nowrap; vertical-align:middle;">${resHtml}</td>
+                <td style="padding:0 8px; color:${popColor}; vertical-align:middle;">${popUsed}/${popMax}</td>
+                <td style="padding:0 8px; white-space:nowrap; overflow:hidden; vertical-align:middle;">${bldgs}</td>
+                <td style="padding:0 8px; white-space:nowrap; vertical-align:middle;">${troopDisplay}</td>
+                <td style="padding:0 8px; text-align:center; white-space:nowrap; vertical-align:middle;">${actionHtml}</td>
             </tr>`;
         });
 
-        html += `</tbody></table>`;
+        html += `</tbody></table></div>`;
         container.innerHTML = html;
+    },
+
+    // --- Helper for Support Button ---
+    openSupportModal: function (targetId) {
+        // If you have a generic attack/support modal, call it here.
+        // Example: ui.openAttackModal(targetId, 'support');
+        // Or if you need to calculate coords first:
+        const t = state.villages.find(v => v.id == targetId);
+        if (t && ui.openAttackModal) {
+            // Assumes you have a rally point opening function that takes coords
+            ui.openAttackModal(t);
+        } else {
+            console.log("Support function not yet linked. Target ID:", targetId);
+        }
     },
     // Sort State (Default)
     overviewSort: { key: 'name', asc: true },
 
     // Helper: Toggle Sort and Re-render
-    toggleOverviewSort: function(key) {
+    toggleOverviewSort: function (key) {
         if (this.overviewSort.key === key) {
             this.overviewSort.asc = !this.overviewSort.asc; // Toggle order
         } else {
             this.overviewSort.key = key;
             this.overviewSort.asc = true; // Default to Ascending
-            
+
             // UX: If sorting by points, default to Descending (Highest first) usually makes more sense, 
             // but let's stick to true (Asc) first click or false (Desc) based on preference.
             // Let's force 'points' to start Descending (High -> Low) as it's more standard for rankings.

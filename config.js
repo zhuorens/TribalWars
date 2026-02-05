@@ -5,7 +5,7 @@ const CONFIG = {
     maxReports: 50,
     
     marketCapacityPerLevel: 1000, // How many resources 1 level can carry
-    buildQueueLimit: 5,
+    buildQueueLimit: 10,
     
     aiAttackEnabled: true,
     aiAttackInterval: 200 * 60 * 1000, // Check for attack every 10 minutes

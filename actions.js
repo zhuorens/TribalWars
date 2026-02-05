@@ -258,7 +258,10 @@ cancel: function (queueType, idx) {
                     totalCount += count;
                     
                     // HIGHER number = SLOWER unit (minutes per tile)
-                    if (DB.units[u].spd > slowestSpeed) {
+                    if (CONFIG.debugFastTravel) {
+                        slowestSpeed = 2;
+                    }
+                    else if (DB.units[u].spd > slowestSpeed) {
                         slowestSpeed = DB.units[u].spd;
                     }
                 }
