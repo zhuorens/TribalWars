@@ -1,12 +1,12 @@
 // --- GAME ACTIONS ---
 const game = {
-cancel: function (queueType, idx) {
+    cancel: function (queueType, idx) {
         const v = engine.getCurrentVillage();
         const q = v.queues[queueType];
         if (!q || !q[idx]) return;
 
         const item = q[idx];
-        
+
         // --- LOGIC CHANGE: CASCADE CANCEL ---
         // If this is a building, we must also cancel any LATER upgrades for the same building
         // to prevent "paying for Level 10 but getting Level 5" bugs.
@@ -20,7 +20,7 @@ cancel: function (queueType, idx) {
                 }
             }
         }
-        
+
         // Sort indexes descending (remove from end first to preserve array positions)
         indexesToRemove.sort((a, b) => b - a);
 
@@ -31,15 +31,15 @@ cancel: function (queueType, idx) {
 
             if (queueType === 'build') {
                 const d = DB.buildings[targetItem.building];
-                
+
                 // Calculate level this specific item was aiming for
                 // We count how many of this building are in the queue BEFORE this specific item
                 const queuedBefore = q.slice(0, remIdx).filter(x => x.building === targetItem.building).length;
                 const targetLvl = (v.buildings[targetItem.building] || 0) + queuedBefore;
 
                 cost = [
-                    Math.floor(d.base[0] * Math.pow(d.factor, targetLvl)), 
-                    Math.floor(d.base[1] * Math.pow(d.factor, targetLvl)), 
+                    Math.floor(d.base[0] * Math.pow(d.factor, targetLvl)),
+                    Math.floor(d.base[1] * Math.pow(d.factor, targetLvl)),
                     Math.floor(d.base[2] * Math.pow(d.factor, targetLvl))
                 ];
 
@@ -51,12 +51,12 @@ cancel: function (queueType, idx) {
                     const curTotal = (targetLvl === 0) ? 0 : Math.round((d.basePop || 0) * Math.pow(d.factor, targetLvl));
                     v.popUsed -= Math.max(0, nextTotal - curTotal);
                 }
-            } 
+            }
             else if (queueType === 'research') {
                 const u = targetItem.unit;
                 const lvl = targetItem.level - 1;
                 cost = DB.units[u].cost.map(x => Math.floor(x * lvl * 5));
-            } 
+            }
             else {
                 // Units
                 const u = DB.units[targetItem.unit];
@@ -84,32 +84,32 @@ cancel: function (queueType, idx) {
     build: function (b) {
         const v = engine.getCurrentVillage();
         const d = DB.buildings[b];
-        
+
         const queuedCount = v.queues.build.filter(q => q.building === b).length;
         const virtualLvl = v.buildings[b] + queuedCount;
 
         if (virtualLvl >= d.maxLevel) { alert(T('maxLevel')); return; }
-        
+
         if (v.queues.build.length >= CONFIG.buildQueueLimit) {
             alert(T('queue_full'));
             return;
         }
 
         const c = [
-            Math.floor(d.base[0] * Math.pow(d.factor, virtualLvl)), 
-            Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)), 
+            Math.floor(d.base[0] * Math.pow(d.factor, virtualLvl)),
+            Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)),
             Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
         ];
 
         // --- POPULATION CHECK ---
         const popAvail = engine.getPopLimit(v) - engine.getPopUsed(v);
-        
+
         // Calculate Incremental Pop Needed
         const nextTotalPop = Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl));
-        const currentTotalPop = (virtualLvl === 0) 
-            ? 0 
+        const currentTotalPop = (virtualLvl === 0)
+            ? 0
             : Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl - 1));
-        
+
         const popNeeded = Math.max(0, nextTotalPop - currentTotalPop);
 
         // Allow Farm/Warehouse/Storage to build even if pop is full
@@ -122,27 +122,27 @@ cancel: function (queueType, idx) {
 
         if (v.res[0] >= c[0] && v.res[1] >= c[1] && v.res[2] >= c[2]) {
             v.res[0] -= c[0]; v.res[1] -= c[1]; v.res[2] -= c[2];
-            
+
             // Deduct Population Immediately
             if (!v.popUsed) v.popUsed = 0;
             v.popUsed += popNeeded;
 
             const hqLvl = v.buildings["Headquarters"] || 1;
-            const speedMod = Math.pow(0.95, hqLvl); 
+            const speedMod = Math.pow(0.95, hqLvl);
             const duration = Math.floor(d.time * Math.pow(1.2, virtualLvl) * speedMod) * 1000;
-            
-            const lastFinish = v.queues.build.length > 0 
-                ? v.queues.build[v.queues.build.length - 1].finish 
+
+            const lastFinish = v.queues.build.length > 0
+                ? v.queues.build[v.queues.build.length - 1].finish
                 : Date.now();
 
-            v.queues.build.push({ 
-                building: b, 
-                duration: duration, 
+            v.queues.build.push({
+                building: b,
+                duration: duration,
                 finish: lastFinish + duration,
                 pop: popNeeded // Save the pop cost for easier cancellation later
             });
-            
-            ui.refresh(); 
+
+            ui.refresh();
             requestAutoSave();
         } else {
             alert(T('resLimit'));
@@ -159,62 +159,70 @@ cancel: function (queueType, idx) {
         const amt = Math.min(maxWood, maxClay, maxIron, maxPop);
         if (amt > 0) game.processRecruit(u, amt); else alert(T('resLimit'));
     },
-    processRecruit: function (u, amt) {
+    processRecruit: function (u, amt, targetVillage = null, suppressUI = false) {
         if (amt <= 0) return;
-        const v = engine.getCurrentVillage();
+
+        // CHANGE 1: Use passed village OR current village
+        const v = targetVillage || engine.getCurrentVillage();
         const d = DB.units[u];
-    
+
         // 1. Calculate Costs (Resources & Pop)
-        const unitPop = d.pop || 1; // Default to 1 if undefined
+        const unitPop = d.pop || 1;
         const popCost = unitPop * amt;
-        
-        // Use engine helpers instead of DOM for accuracy
+
+        // Use engine helpers
         const popAvail = engine.getPopLimit(v) - engine.getPopUsed(v);
-    
-        if (popCost > popAvail) { 
-            alert(T('popLimit')); 
-            return; 
+
+        if (popCost > popAvail) {
+            if (!suppressUI) alert(T('popLimit')); // Only alert if manual
+            return;
         }
-    
+
         const c = [d.cost[0] * amt, d.cost[1] * amt, d.cost[2] * amt];
-    
+
         // 2. Resource Check
         if (v.res[0] >= c[0] && v.res[1] >= c[1] && v.res[2] >= c[2]) {
             // Deduct Resources
-            v.res[0] -= c[0]; 
-            v.res[1] -= c[1]; 
+            v.res[0] -= c[0];
+            v.res[1] -= c[1];
             v.res[2] -= c[2];
-            
-            // --- FIX: Deduct Population Immediately ---
+
+            // Deduct Population Immediately
             if (!v.popUsed) v.popUsed = 0;
             v.popUsed += popCost;
-    
+
             const qType = d.building.toLowerCase();
+
+            // Safety check for queue existence
+            if (!v.queues[qType]) v.queues[qType] = [];
             const q = v.queues[qType];
-    
-            // 3. Calculate Time Per Unit (Applying Building Speed)
+
+            // 3. Calculate Time Per Unit
             const bLvl = v.buildings[d.building] || 1;
-            const speedFactor = Math.pow(0.96, bLvl); 
-            const unitTime = d.time * 1000 * speedFactor; 
-    
+            const speedFactor = Math.pow(0.96, bLvl);
+            const unitTime = d.time * 1000 * speedFactor;
+
             // 4. Add to Queue
             const lastItem = q.length > 0 ? q[q.length - 1] : null;
-    
+
             if (lastItem && lastItem.unit === u) {
                 lastItem.count += amt;
             } else {
-                q.push({ 
-                    unit: u, 
-                    count: amt, 
-                    unitTime: unitTime, 
-                    finish: null 
+                q.push({
+                    unit: u,
+                    count: amt,
+                    unitTime: unitTime,
+                    finish: null // Engine handles processing
                 });
             }
-    
-            ui.refresh();
-            requestAutoSave();
+
+            // CHANGE 2: Only refresh if not in mass mode
+            if (!suppressUI) {
+                ui.refresh();
+                requestAutoSave();
+            }
         } else {
-            alert(T('resLimit'));
+            if (!suppressUI) alert(T('resLimit'));
         }
     },
     research: function (u) {
@@ -231,7 +239,7 @@ cancel: function (queueType, idx) {
         const duration = Math.floor(baseTime * reduction * 1000);
         const lastFinish = q.length > 0 ? q[q.length - 1].finish : Date.now();
         q.push({ unit: u, level: curLvl + 1, duration: duration, finish: lastFinish + duration });
-        ui.closeBuildingModal(); ui.refresh(); 
+        ui.closeBuildingModal(); ui.refresh();
         // CHANGED: Use soft save
         requestAutoSave();
     },
@@ -239,15 +247,15 @@ cancel: function (queueType, idx) {
     launchAttack: function (type) {
         const origin = engine.getCurrentVillage();
         const target = ui.selTile;
-        
+
         if (!target) return;
         if (origin.id === target.id) { alert(T('cant_attack_self')); return; }
-    
+
         // 1. Gather Units & Find Slowest Speed
         let unitsToSend = {};
         let slowestSpeed = 0;
         let totalCount = 0;
-    
+
         for (let u in DB.units) {
             const input = document.getElementById('atk-' + u);
             if (input) {
@@ -256,7 +264,7 @@ cancel: function (queueType, idx) {
                     if (origin.units[u] < count) { alert(T('not_enough_troops')); return; }
                     unitsToSend[u] = count;
                     totalCount += count;
-                    
+
                     // HIGHER number = SLOWER unit (minutes per tile)
                     if (CONFIG.debugFastTravel) {
                         slowestSpeed = 2;
@@ -267,19 +275,19 @@ cancel: function (queueType, idx) {
                 }
             }
         }
-    
+
         if (totalCount === 0) return;
-    
+
         // 2. Calculate Distance (Pythagorean theorem)
         const dx = Math.abs(origin.x - target.x);
         const dy = Math.abs(origin.y - target.y);
         const dist = Math.sqrt(dx * dx + dy * dy);
-    
+
         // 3. Calculate Duration
         // Duration (ms) = Distance * Speed (min/tile) * 60 * 1000
         // We normally use milliseconds for game timing
         const durationMs = dist * slowestSpeed * 6 * 1000;
-    
+
         // 4. Create Mission
         const m = {
             id: Date.now() + Math.floor(Math.random() * 100000),
@@ -289,23 +297,23 @@ cancel: function (queueType, idx) {
             units: unitsToSend,
             startTime: Date.now(),
             arrival: Date.now() + durationMs,
-            
+
             // Optional: Store original resources if this is transport
-            resources: { wood: 0, clay: 0, iron: 0 } 
+            resources: { wood: 0, clay: 0, iron: 0 }
         };
-    
+
         // Remove units from village immediately
         for (let u in unitsToSend) {
             origin.units[u] -= unitsToSend[u];
         }
-    
+
         state.missions.push(m);
-        
+
         // UI Feedback
         ui.closeAttackModal();
         ui.refresh();
         ui.updateMissions();
-        
+
         requestAutoSave();
     },
     sendBackSupport: function (idx) {
@@ -316,7 +324,7 @@ cancel: function (queueType, idx) {
         const dur = dist * (state.debugFastTravel ? 2 : 60);
         v.stationed.splice(idx, 1);
         state.missions.push({ originId: stack.originId, targetId: stack.originId, units: stack.units, type: 'return', arrival: Date.now() + (dur * 1000) });
-        ui.refresh(); ui.closeReportModal(); 
+        ui.refresh(); ui.closeReportModal();
         // CHANGED: Use soft save
         requestAutoSave();
     },
@@ -331,14 +339,14 @@ cancel: function (queueType, idx) {
         const dist = Math.sqrt(Math.pow(target.x - v.x, 2) + Math.pow(target.y - v.y, 2));
         const dur = dist * (state.debugFastTravel ? 2 : 60);
         state.missions.push({ originId: v.id, targetId: v.id, units: stack.units, type: 'return', arrival: Date.now() + (dur * 1000) });
-        ui.refresh(); ui.closeReportModal(); 
+        ui.refresh(); ui.closeReportModal();
         // CHANGED: Use soft save
         requestAutoSave();
     },
-    sendResources: function() {
+    sendResources: function () {
         const v = engine.getCurrentVillage();
         const targetId = parseFloat(document.getElementById('market-target-id').value);
-        
+
         const wood = parseInt(document.getElementById('market-wood').value) || 0;
         const clay = parseInt(document.getElementById('market-clay').value) || 0;
         const iron = parseInt(document.getElementById('market-iron').value) || 0;
@@ -352,10 +360,10 @@ cancel: function (queueType, idx) {
 
         const marketLvl = v.buildings["Market"] || 0;
         if (marketLvl === 0) { alert("Build a Market first!"); return; }
-        
+
         const maxCap = marketLvl * CONFIG.marketCapacityPerLevel;
         const total = wood + clay + iron;
-        
+
         if (total > maxCap) {
             alert(`Market capacity exceeded! Max: ${maxCap}`);
             return;
@@ -367,7 +375,7 @@ cancel: function (queueType, idx) {
         v.res[0] -= wood; v.res[1] -= clay; v.res[2] -= iron;
 
         const dist = Math.sqrt(Math.pow(targetV.x - v.x, 2) + Math.pow(targetV.y - v.y, 2));
-        const dur = dist * 60 * 1000; 
+        const dur = dist * 60 * 1000;
 
         state.missions.push({
             originId: v.id,
@@ -377,7 +385,7 @@ cancel: function (queueType, idx) {
             arrival: Date.now() + dur
         });
 
-        ui.closeBuildingModal(); 
+        ui.closeBuildingModal();
         ui.refresh();
         // CHANGED: Use soft save
         requestAutoSave();

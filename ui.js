@@ -917,17 +917,17 @@ const ui = {
                 const d = document.createElement('div');
                 d.className = "tile";
 
+                // Ensure relative positioning so we can place badges in the corner
+                d.style.position = "relative";
+
                 if (t && t.type !== "empty") {
-                    // 1. Get Owner & Profile
                     const ownerId = t.owner || (t.type === 'player' ? 'player' : 'barbarian');
                     const profile = engine.getPlayerProfile(ownerId);
                     const color = profile ? profile.color : '#bdbdbd';
 
-                    // 2. APPLY BACKGROUND COLOR
                     d.style.background = color;
                     d.style.border = "1px solid rgba(0,0,0,0.2)";
 
-                    // 3. Icon & Name
                     let icon = "🛖";
                     if (ownerId === 'player') icon = "🏰";
                     else if (ownerId.startsWith('ai_')) icon = "🏯";
@@ -935,25 +935,49 @@ const ui = {
                     let displayName = T_Name(t.name);
                     if (!STRINGS[LANG][t.name]) displayName = t.name;
 
+                    // --- NEW VISIBILITY FIX: Corner Badge ---
+                    let badgeHtml = "";
+                    if (ownerId === 'player' && t.group) {
+                        let badgeIcon = "";
+                        if (t.group === 'offense') badgeIcon = "⚔️";
+                        else if (t.group === 'defense') badgeIcon = "🛡️";
+
+                        if (badgeIcon) {
+                            // Larger icon, top-right corner, drop shadow for contrast
+                            badgeHtml = `
+                                <div style="
+                                    position: absolute; 
+                                    top: 2px; 
+                                    right: 2px; 
+                                    font-size: 14px; 
+                                    line-height: 1;
+                                    filter: drop-shadow(0px 0px 2px rgba(0,0,0,0.8));
+                                    cursor: help;
+                                " title="${t.group.toUpperCase()} Village">
+                                    ${badgeIcon}
+                                </div>
+                            `;
+                        }
+                    }
+
+                    // Removed groupIndicator from points string to clean it up
                     const pts = t.points ? `\n<span style='font-size:9px; opacity:0.8'>${t.points}</span>` : "";
 
                     d.innerHTML = `
-                    <div style="font-size:16px; margin-top:2px;">${icon}</div>
-                    <div class="tile-name" style="color:white; text-shadow:1px 1px 0 #000; font-weight:bold;">
-                        ${displayName}
-                    </div>
-                    ${pts}
-                `;
+                        ${badgeHtml}
+                        <div style="font-size:16px; margin-top:2px;">${icon}</div>
+                        <div class="tile-name" style="color:white; text-shadow:1px 1px 0 #000; font-weight:bold;">
+                            ${displayName}
+                        </div>
+                        ${pts}
+                    `;
 
-                    // --- TOOLTIP EVENTS ADDED HERE ---
                     d.onmouseenter = () => ui.showMapTooltip(x, y);
                     d.onmousemove = (e) => ui.moveTooltip(e);
                     d.onmouseleave = () => ui.hideMapTooltip();
-                    // ---------------------------------
 
                     d.onclick = (e) => {
                         e.stopPropagation();
-                        // Check if it's a real village object with an ID, if so, check if it's yours
                         if (t.id && t.id === engine.getCurrentVillage().id) {
                             alert(T('managing_alert'));
                             return;
@@ -1447,7 +1471,6 @@ const ui = {
         const sortKey = this.overviewSort.key;
         const order = this.overviewSort.asc ? 1 : -1;
 
-        // Helper to get distance
         const getDist = (v) => {
             if (!currentVillage) return 0;
             return Math.sqrt(Math.pow(v.x - currentVillage.x, 2) + Math.pow(v.y - currentVillage.y, 2));
@@ -1459,23 +1482,27 @@ const ui = {
             return a.name.localeCompare(b.name) * order;
         });
 
-        // 3. Header Icons
         const getSortIcon = (key) => (this.overviewSort.key !== key) ? `<span style="opacity:0.3">↕</span>` : (this.overviewSort.asc ? "▲" : "▼");
 
-        // STYLE: Balanced Table with Distance Column
+        // 3. Table Header (With MASS Button)
         let html = `
         <div style="overflow-x:auto; background:#fff; border-radius:3px; box-shadow:0 1px 2px rgba(0,0,0,0.1);">
         <table class="rank-table" style="width:100%; min-width:1200px; font-size:12px; border-collapse: collapse;">
             <thead>
                 <tr style="background:#f0f2f5; color:#444; border-bottom:1px solid #d1d1d1; text-align:left;">
-                    <th style="width:15%; padding:8px 8px; cursor:pointer;" onclick="ui.toggleOverviewSort('name')">Village ${getSortIcon('name')}</th>
+                    <th style="width:18%; padding:8px 8px; cursor:pointer;" onclick="ui.toggleOverviewSort('name')">Village ${getSortIcon('name')}</th>
                     <th style="width:5%; padding:8px 8px; cursor:pointer;" onclick="ui.toggleOverviewSort('dist')">Dist ${getSortIcon('dist')}</th>
                     <th style="width:6%; padding:8px 8px; cursor:pointer;" onclick="ui.toggleOverviewSort('points')">Pts ${getSortIcon('points')}</th>
                     <th style="width:14%; padding:8px 8px;">Resources</th>
                     <th style="width:6%; padding:8px 8px;">Pop</th>
                     <th style="width:18%; padding:8px 8px;">Buildings</th>
-                    <th style="width:26%; padding:8px 8px;">Troops (Own | <span style="color:#1976D2">Support</span>)</th>
-                    <th style="width:10%; padding:8px 8px; text-align:center;">Actions</th> 
+                    <th style="width:23%; padding:8px 8px;">Troops (Own | <span style="color:#1976D2">Support</span>)</th>
+                    <th style="width:10%; padding:8px 8px; text-align:center;">
+                        <button class="btn-mini" style="background:#333; color:white; border:none; padding:4px 8px; border-radius:3px; cursor:pointer; font-size:10px;" 
+                            onclick="ui.openMassActionModal()" title="Open Mass Manager">
+                            ⚡ MASS
+                        </button>
+                    </th> 
                 </tr>
             </thead>
             <tbody>
@@ -1487,7 +1514,6 @@ const ui = {
             "Ram": "🐏", "Catapult": "☄️", "Noble": "👑", "Paladin": "⚜️"
         };
 
-        // Helper: Inline Unit String
         const renderUnitString = (unitsObj, color = "#000") => {
             let parts = [];
             for (let u in DB.units) {
@@ -1506,11 +1532,11 @@ const ui = {
             const bg = isSelected ? "background:#e3f2fd;" : "background:#fff";
             const border = isSelected ? "border-left: 3px solid #2196F3;" : "border-left: 3px solid transparent;";
 
-            // Distance Value
+            // Distance
             const dist = getDist(v);
             const distDisplay = isSelected ? "-" : dist.toFixed(1);
 
-            // Resources (Fixed: use engine.getStorage)
+            // Resources
             const storage = engine.getStorage(v);
             const resHtml = [0, 1, 2].map(i => {
                 const val = Math.floor(v.res[i]);
@@ -1562,7 +1588,10 @@ const ui = {
 
             const busy = v.queues.build.length > 0 ? "🔨" : "";
 
-            // --- THE ROW ---
+            // Group Icon Logic
+            const group = v.group || 'balanced';
+            const groupIcon = this.getGroupIcon(group);
+
             html += `
             <tr style="${bg} ${border} cursor:pointer; border-bottom:1px solid #eee; height:32px;" 
                 onclick="ui.switchVillage('${v.id}')"
@@ -1570,6 +1599,11 @@ const ui = {
                 onmouseleave="this.style.backgroundColor='${isSelected ? '#e3f2fd' : '#fff'}'">
                 
                 <td style="padding:0 8px; white-space:nowrap; vertical-align:middle;">
+                    <button class="btn-mini" style="background:none; border:none; cursor:pointer; font-size:14px; margin-right:2px;" 
+                        onclick="event.stopPropagation(); ui.toggleGroup('${v.id}')" 
+                        title="Toggle: Offense / Defense / Balanced">
+                        ${groupIcon}
+                    </button>
                     <b>${v.name}</b> <span style="color:#666; font-size:10px;">(${v.x}|${v.y})</span> ${busy}
                 </td>
                 <td style="padding:0 8px; vertical-align:middle; color:#666;">${distDisplay}</td>
@@ -1616,5 +1650,278 @@ const ui = {
             if (key === 'points') this.overviewSort.asc = false;
         }
         this.renderOverview();
+    },
+
+    // --- GROUP MANAGEMENT ---
+    toggleGroup: function (id) {
+        const v = state.villages.find(vil => vil.id == id);
+        if (!v) return;
+
+        // Cycle: Balanced -> Offense -> Defense -> Balanced
+        const current = v.group || 'balanced';
+        if (current === 'balanced') v.group = 'offense';
+        else if (current === 'offense') v.group = 'defense';
+        else v.group = 'balanced';
+
+        this.renderOverview(); // Refresh icon
+    },
+
+    getGroupIcon: function (group) {
+        if (group === 'offense') return '⚔️';
+        if (group === 'defense') return '🛡️';
+        return '⚖️'; // Balanced
+    },
+
+    _renderMassInput: function (unit, icon) {
+        return `
+            <div>
+                <label style="font-size:11px; display:block; color:#555;">${icon} ${unit}</label>
+                <input type="number" id="mass-input-${unit.replace(' ', '')}" placeholder="0" class="mass-input" style="width:100%; padding:4px; border:1px solid #ccc; border-radius:3px;">
+            </div>
+        `;
+    },
+
+    openMassActionModal: function () {
+        // Setup State if missing
+        if (!state.templates) state.templates = { offense: {}, defense: {} };
+
+        let html = `
+            <div style="padding:15px;">
+                
+                <div style="display:flex; border-bottom:1px solid #ccc; margin-bottom:15px;">
+                    <button class="btn-tab active" onclick="ui.switchMassTab('recruit')" id="tab-btn-recruit" style="flex:1; padding:10px; background:#e3f2fd; border:none; cursor:pointer;">Mass Recruit</button>
+                    <button class="btn-tab" onclick="ui.switchMassTab('templates')" id="tab-btn-templates" style="flex:1; padding:10px; background:#f1f1f1; border:none; cursor:pointer;">Edit Templates</button>
+                </div>
+
+                <div id="tab-content-recruit">
+                    <div style="background:#e8f5e9; padding:15px; border-radius:5px; border:1px solid #c8e6c9; margin-bottom:15px;">
+                        <h3 style="margin:0 0 5px 0; color:#2E7D32;">🤖 Auto-Train to Template</h3>
+                        <p style="font-size:11px; color:#555; margin-bottom:10px;">
+                            Automatically fills recruitment queues to match your Offense/Defense templates.
+                        </p>
+                        <button class="btn btn-blue" style="width:100%; padding:10px;" onclick="ui.executeTemplateTraining()">
+                            🚀 Train All Villages to Template
+                        </button>
+                    </div>
+                    
+                    </div>
+
+                <div id="tab-content-templates" style="display:none;">
+                    
+                    <div style="background:#fff3e0; padding:10px; border-radius:5px; border:1px solid #ffe0b2; margin-bottom:10px;">
+                        <h4 style="margin:0 0 5px 0;">⚔️ Offense Template</h4>
+                        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:5px;">
+                            ${this._renderTemplateInput('offense', 'Axe', '🪓')}
+                            ${this._renderTemplateInput('offense', 'Light Cav', '🐴')}
+                            ${this._renderTemplateInput('offense', 'Ram', '🐏')}
+                        </div>
+                    </div>
+
+                    <div style="background:#e3f2fd; padding:10px; border-radius:5px; border:1px solid #bbdefb; margin-bottom:10px;">
+                        <h4 style="margin:0 0 5px 0;">🛡️ Defense Template</h4>
+                        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:5px;">
+                            ${this._renderTemplateInput('defense', 'Spear', '🔱')}
+                            ${this._renderTemplateInput('defense', 'Sword', '🗡️')}
+                            ${this._renderTemplateInput('defense', 'Heavy Cav', '♞')}
+                        </div>
+                    </div>
+
+                    <button class="btn" style="width:100%; background:#333; color:white;" onclick="ui.saveTemplates()">
+                        💾 Save Templates
+                    </button>
+                </div>
+
+            </div>
+        `;
+
+        document.getElementById('b-modal-title').innerText = "Command Center";
+        document.getElementById('b-modal-desc').innerHTML = "";
+        document.getElementById('b-modal-cost').innerHTML = html;
+        document.getElementById('b-modal-btn').style.display = 'none';
+        document.getElementById('building-modal').style.display = 'flex';
+    },
+
+    // Helper for Inputs
+    _renderTemplateInput: function (type, unit, icon) {
+        const val = state.templates[type][unit] || 0;
+        return `
+            <div style="font-size:11px;">
+                ${icon} ${unit}
+                <input type="number" id="tpl-${type}-${unit.replace(' ', '')}" value="${val}" 
+                style="width:100%; border:1px solid #ccc; padding:3px;">
+            </div>
+        `;
+    },
+
+    // Tab Switcher
+    switchMassTab: function (tab) {
+        document.getElementById('tab-content-recruit').style.display = tab === 'recruit' ? 'block' : 'none';
+        document.getElementById('tab-content-templates').style.display = tab === 'templates' ? 'block' : 'none';
+
+        document.getElementById('tab-btn-recruit').style.background = tab === 'recruit' ? '#e3f2fd' : '#f1f1f1';
+        document.getElementById('tab-btn-templates').style.background = tab === 'templates' ? '#e3f2fd' : '#f1f1f1';
+    },
+
+    // Save Logic
+    saveTemplates: function () {
+        const getVal = (id) => Number(document.getElementById(id).value) || 0;
+
+        state.templates.offense = {
+            "Axe": getVal('tpl-offense-Axe'),
+            "Light Cav": getVal('tpl-offense-LightCav'),
+            "Ram": getVal('tpl-offense-Ram')
+        };
+        state.templates.defense = {
+            "Spear": getVal('tpl-defense-Spear'),
+            "Sword": getVal('tpl-defense-Sword'),
+            "Heavy Cav": getVal('tpl-defense-HeavyCav')
+        };
+
+        ui.showToast("Templates Saved!", "success");
+        ui.switchMassTab('recruit');
+    },
+
+    executeTemplateTraining: function () {
+        let totalQueued = 0;
+        let villagesAffected = 0;
+
+        state.villages.forEach(v => {
+            if (v.owner !== 'player') return;
+
+            const group = v.group || 'balanced';
+            if (group === 'balanced') return;
+
+            const template = state.templates[group];
+            if (!template) return;
+
+            // --- STEP 1: CALCULATE DEFICIT (Using Total Count) ---
+            const needs = {};
+            let totalCost = [0, 0, 0];
+            let totalPopNeeded = 0;
+            let hasDeficit = false;
+
+            for (let unit in template) {
+                const target = template[unit];
+                if (target <= 0) continue;
+
+                // CHANGE: Use the new engine helper
+                const totalOwned = engine.getUnitCountTotal(v, unit);
+
+                const missing = target - totalOwned;
+
+                if (missing > 0) {
+                    needs[unit] = missing;
+
+                    const d = DB.units[unit];
+                    totalCost[0] += d.cost[0] * missing;
+                    totalCost[1] += d.cost[1] * missing;
+                    totalCost[2] += d.cost[2] * missing;
+                    totalPopNeeded += (d.pop || 1) * missing;
+                    hasDeficit = true;
+                }
+            }
+
+            if (!hasDeficit) return;
+
+            // --- STEP 2: CALCULATE BOTTLENECK (Resources & Pop) ---
+            // (Same "Fair Share" logic as before)
+            const availPop = engine.getPopLimit(v) - engine.getPopUsed(v);
+
+            const factorW = totalCost[0] > 0 ? v.res[0] / totalCost[0] : 1;
+            const factorC = totalCost[1] > 0 ? v.res[1] / totalCost[1] : 1;
+            const factorI = totalCost[2] > 0 ? v.res[2] / totalCost[2] : 1;
+
+            // Important: We only have pop space for what is NOT yet built/queued
+            // engine.getPopUsed already counts queued units if your processRecruit updates it correctly.
+            // If popFactor is > 1, it means we have plenty of space.
+            const factorP = totalPopNeeded > 0 ? availPop / totalPopNeeded : 1;
+
+            let limitFactor = Math.min(1.0, factorW, factorC, factorI, factorP);
+
+            if (limitFactor < 0.01) return;
+
+            // --- STEP 3: EXECUTE ---
+            let trainedHere = false;
+
+            for (let unit in needs) {
+                const fullNeed = needs[unit];
+                const toTrain = Math.floor(fullNeed * limitFactor);
+
+                if (toTrain > 0) {
+                    game.processRecruit(unit, toTrain, v, true);
+                    totalQueued += toTrain;
+                    trainedHere = true;
+                }
+            }
+
+            if (trainedHere) villagesAffected++;
+        });
+
+        ui.showToast(`Queued ${totalQueued} units in ${villagesAffected} villages.`, "success");
+        document.getElementById('building-modal').style.display = 'none';
+        ui.renderOverview();
+        requestAutoSave();
+    },
+    // --- NOTIFICATION SYSTEM ---
+    showToast: function(msg, type = 'info') {
+        // 1. Ensure Container Exists (Lazy Init)
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            // Fixed position top-right
+            container.style.cssText = "position:fixed; top:70px; right:20px; z-index:10000; display:flex; flex-direction:column; gap:10px; pointer-events:none;";
+            document.body.appendChild(container);
+        }
+
+        // 2. Create Toast Element
+        const toast = document.createElement('div');
+        
+        // Choose Color based on type
+        let bg = "#333"; // Default/Info (Black)
+        let icon = "ℹ️";
+        
+        if (type === 'success') { bg = "#4CAF50"; icon = "✅"; } // Green
+        else if (type === 'error') { bg = "#f44336"; icon = "⚠️"; } // Red
+        else if (type === 'warning') { bg = "#ff9800"; icon = "🔸"; } // Orange
+
+        // Style the individual toast
+        toast.style.cssText = `
+            background: ${bg};
+            color: white;
+            padding: 10px 16px;
+            border-radius: 4px;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+            font-size: 13px;
+            opacity: 0;
+            transform: translateX(20px);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 200px;
+        `;
+        
+        toast.innerHTML = `<span>${icon}</span> <span>${msg}</span>`;
+
+        // 3. Append to Container
+        container.appendChild(toast);
+
+        // 4. Animate In (Next Frame)
+        requestAnimationFrame(() => {
+            toast.style.opacity = "1";
+            toast.style.transform = "translateX(0)";
+        });
+
+        // 5. Auto-Remove after 3 seconds
+        setTimeout(() => {
+            toast.style.opacity = "0";
+            toast.style.transform = "translateX(20px)";
+            
+            // Wait for fade out transition to finish before removing from DOM
+            setTimeout(() => {
+                if (toast.parentNode) toast.parentNode.removeChild(toast);
+            }, 300);
+        }, 3000);
     },
 };

@@ -568,7 +568,7 @@ const engine = {
 
                 // C. CONQUEST
                 if (isAi && Math.random() < 0.025 && v.buildings["Academy"] > 0 && engine.getStorage(v) >= 50000) {
-                    const range = 7;
+                    const range = 10;
                     const targets = state.villages.filter(t =>
                         Math.abs(t.x - v.x) <= range &&
                         Math.abs(t.y - v.y) <= range &&
@@ -1193,5 +1193,49 @@ const engine = {
         return state.villages
             .filter(v => v.owner === ownerId)
             .reduce((sum, v) => sum + (v.points || 0), 0);
+    },
+    // Add to engine object
+    getUnitCountTotal: function (village, unitName) {
+        let total = village.units[unitName] || 0;
+
+        // 1. Add Queue (Training)
+        // We check both recruitment queues just to be safe
+        if (village.queues.recruit) {
+            village.queues.recruit.forEach(j => {
+                if (j.unit === unitName) total += j.count;
+            });
+        }
+        // Legacy queue support (if you still use v.queues.barracks etc)
+        ["barracks", "stable", "workshop"].forEach(b => {
+            if (village.queues[b]) {
+                village.queues[b].forEach(j => {
+                    if (j.unit === unitName) total += j.count;
+                });
+            }
+        });
+
+        // 2. Add Moving (Missions)
+        // Look for missions sent BY this village
+        state.missions.forEach(m => {
+            // Safety check: ensure m.units exists before reading it
+            if (m.originId === village.id && m.units && m.units[unitName]) {
+                total += m.units[unitName];
+            }
+        });
+
+        // 3. Add Supporting (Stationed in others)
+        // We must loop through ALL villages to find where our troops are parked.
+        // (Performance note: For <1000 villages this is instant. For 10k+ it might lag slightly)
+        state.villages.forEach(otherV => {
+            if (otherV.stationed) {
+                otherV.stationed.forEach(s => {
+                    if (s.originId === village.id && s.units[unitName]) {
+                        total += s.units[unitName];
+                    }
+                });
+            }
+        });
+
+        return total;
     },
 };
