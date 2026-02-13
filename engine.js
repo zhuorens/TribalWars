@@ -897,7 +897,7 @@ const engine = {
         if (result.win && m.units["Noble"] > 0) {
             const nobleCount = m.units["Noble"];
             let drop = 0;
-            for (let i = 0; i < nobleCount; i++) drop += Math.floor(20 + Math.random() * 16);
+            for (let i = 0; i < nobleCount; i++) drop += Math.floor(22 + Math.random() * 14);
             target.loyalty -= drop;
             loyaltyMsg = `<div style="color:blue"><b>${T('loyalty')} ${Math.floor(target.loyalty)}!</b> (-${drop})</div>`;
 

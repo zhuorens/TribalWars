@@ -7,8 +7,8 @@ let state = {
     playerProfiles: {},
     mapView: { x: 100, y: 100 },
     templates: {
-        offense: { "Axe": 6000, "Light Cav": 2000, "Ram": 300 },
-        defense: { "Spear": 4000, "Sword": 4000, "Heavy Cav": 1500 }
+        offense: { "Axe": 8000, "Scout": 50, "Light Cav": 2500, "Ram": 300, "Noble": 4 },
+        defense: { "Spear": 4000, "Sword": 4000, "Scout": 50, "Heavy Cav": 1500 }
     },
     lastTick: Date.now(),
     lastAiUpdate: Date.now(),

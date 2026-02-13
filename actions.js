@@ -55,7 +55,7 @@ const game = {
             else if (queueType === 'research') {
                 const u = targetItem.unit;
                 const lvl = targetItem.level - 1;
-                cost = DB.units[u].cost.map(x => Math.floor(x * lvl * 5));
+                cost = DB.units[u].cost.map(x => Math.floor(x * lvl * 10));
             }
             else {
                 // Units
@@ -228,7 +228,7 @@ const game = {
     research: function (u) {
         const v = engine.getCurrentVillage(); if (!v.techs) v.techs = {}; const curLvl = v.techs[u] || 1; const maxLvl = DB.units[u].maxLevel || 3;
         if (curLvl >= maxLvl) { alert(T('maxLevel')); return; }
-        const rc = DB.units[u].cost.map(x => Math.floor(x * curLvl * 5));
+        const rc = DB.units[u].cost.map(x => Math.floor(x * curLvl * 10));
         if (v.res[0] < rc[0] || v.res[1] < rc[1] || v.res[2] < rc[2]) { alert(T('resLimit')); return; }
         if (v.buildings["Smithy"] <= 0) { alert("Build Smithy!"); return; }
         const q = v.queues.research;

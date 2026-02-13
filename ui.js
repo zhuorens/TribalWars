@@ -381,14 +381,13 @@ const ui = {
         </div>`;
 
         // 2. Build Unit Inputs
-        // Sort units by speed (fastest first usually helps, or slowest to see bottleneck)
         const unitKeys = Object.keys(v.units).filter(u => v.units[u] > 0);
 
         if (unitKeys.length === 0) {
             html += `<div style="padding:10px; color:#999; text-align:center;">${T('noTroops')}</div>`;
         } else {
             unitKeys.forEach(u => {
-                const speed = DB.units[u].spd; // Updated from 'spd' to 'speed'
+                const speed = DB.units[u].spd;
                 html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
                 <div style="width:110px;">
                     <b>${T_Name(u)}</b> <span style="font-size:10px; color:#666">(${v.units[u]})</span><br>
@@ -401,6 +400,47 @@ const ui = {
             </div>`;
             });
         }
+
+        // --- NEW SECTION: ACTIVE MISSIONS (FROM PLAYER -> TARGET) ---
+        // Find missions targeting this village that originated from the player
+        if (state.missions) {
+            const myActiveMissions = state.missions.filter(m => {
+                if (m.targetId !== target.id) return false; // Must match target
+
+                // Check if origin is mine
+                const originV = state.villages.find(vil => vil.id === m.originId);
+                return originV && originV.owner === 'player';
+            });
+
+            if (myActiveMissions.length > 0) {
+                html += `<div style="margin-top:15px; padding-top:10px; border-top:1px solid #ddd;">
+                <div style="font-size:11px; font-weight:bold; color:#555; margin-bottom:5px;">⚠️ Active Missions (Incoming)</div>
+                <table style="width:100%; font-size:10px; border-collapse:collapse;">`;
+
+                myActiveMissions.forEach(m => {
+                    const originV = state.villages.find(vil => vil.id === m.originId);
+                    const originName = originV ? originV.name : "Unknown";
+
+                    const isAttack = m.type === 'attack';
+                    const icon = isAttack ? '⚔️' : '🛡️';
+                    const typeColor = isAttack ? '#d32f2f' : '#1976D2';
+
+                    // Simple countdown calc
+                    const secondsLeft = Math.max(0, Math.ceil((m.arrival - Date.now()) / 1000));
+                    const timeStr = new Date(secondsLeft * 1000).toISOString().substr(11, 8); // HH:MM:SS format
+
+                    html += `
+                    <tr style="border-bottom:1px solid #eee;">
+                        <td style="padding:4px; width:20px;">${icon}</td>
+                        <td style="padding:4px; font-weight:bold; color:${typeColor}; width:50px;">${m.type.toUpperCase()}</td>
+                        <td style="padding:4px;">from ${originName}</td>
+                        <td style="padding:4px; text-align:right; font-family:monospace;">${timeStr}</td>
+                    </tr>`;
+                });
+                html += `</table></div>`;
+            }
+        }
+        // -----------------------------------------------------------
 
         // 3. Recent Reports (Intel)
         if (state.reports) {
@@ -415,11 +455,8 @@ const ui = {
 
                 recent.forEach(r => {
                     const dot = r.type === 'win' ? '🟢' : '🔴';
-
-                    // Find the actual index in the main array to pass to the viewer
                     const rIndex = state.reports.indexOf(r);
 
-                    // ADDED: onclick, cursor style, and hover effect
                     html += `
                 <tr style="border-bottom:1px solid #eee; cursor:pointer; transition:background 0.1s;" 
                     onclick="ui.previewReport(${rIndex})"
@@ -743,7 +780,7 @@ const ui = {
                 if (curLvl >= uMax) {
                     html += `<div style="background:#eee; padding:5px; font-size:12px; border:1px solid #ccc; opacity:0.7"><b>${T_Name(u)}</b><br><span style="color:gold;">★ ${T('max')} (Lv${curLvl})</span></div>`;
                 } else {
-                    const rc = DB.units[u].cost.map(x => Math.floor(x * curLvl * 15));
+                    const rc = DB.units[u].cost.map(x => Math.floor(x * curLvl * 10));
                     const baseTime = DB.units[u].time * 200;
                     const rTime = Math.floor(baseTime * Math.pow(0.9, v.buildings[bName]) * 1000);
                     // Research doesn't cost population, so no check here
@@ -1025,6 +1062,7 @@ const ui = {
 
             // Fetch Profile Color
             const profile = engine.getPlayerProfile(v.owner);
+            if (v.owner === 'player') { profile.color = '#ffffff' }
             ctx.fillStyle = profile ? profile.color : '#888'; // Default grey if missing
 
             ctx.fillRect(mx, my, 3, 3);
@@ -1463,6 +1501,8 @@ const ui = {
         const container = document.getElementById('overview-list');
         if (!container) return;
 
+        const MAX_RES_LEVEL = 30;
+
         // 1. Data Setup
         let myVillages = state.villages.filter(v => v.owner === 'player');
         const currentVillage = engine.getCurrentVillage();
@@ -1476,21 +1516,36 @@ const ui = {
             return Math.sqrt(Math.pow(v.x - currentVillage.x, 2) + Math.pow(v.y - currentVillage.y, 2));
         };
 
+        const getGroupRank = (v) => {
+            if (v.group === 'defense') return 1;
+            if (v.group === 'offense') return 2;
+            return 3;
+        };
+
         myVillages.sort((a, b) => {
             if (sortKey === 'points') return (a.points - b.points) * order;
             if (sortKey === 'dist') return (getDist(a) - getDist(b)) * order;
+            if (sortKey === 'group') {
+                const diff = getGroupRank(a) - getGroupRank(b);
+                if (diff !== 0) return diff * order;
+                return a.name.localeCompare(b.name);
+            }
             return a.name.localeCompare(b.name) * order;
         });
 
         const getSortIcon = (key) => (this.overviewSort.key !== key) ? `<span style="opacity:0.3">↕</span>` : (this.overviewSort.asc ? "▲" : "▼");
 
-        // 3. Table Header (With MASS Button)
+        // 3. Table Header
         let html = `
         <div style="overflow-x:auto; background:#fff; border-radius:3px; box-shadow:0 1px 2px rgba(0,0,0,0.1);">
         <table class="rank-table" style="width:100%; min-width:1200px; font-size:12px; border-collapse: collapse;">
             <thead>
                 <tr style="background:#f0f2f5; color:#444; border-bottom:1px solid #d1d1d1; text-align:left;">
-                    <th style="width:18%; padding:8px 8px; cursor:pointer;" onclick="ui.toggleOverviewSort('name')">Village ${getSortIcon('name')}</th>
+                    <th style="width:18%; padding:8px 8px;">
+                        <span style="cursor:pointer; font-weight:bold;" onclick="ui.toggleOverviewSort('group')" title="Sort by Type">Type${getSortIcon('group')}</span>
+                        <span style="color:#ccc; margin:0 4px;">|</span>
+                        <span style="cursor:pointer; font-weight:bold;" onclick="ui.toggleOverviewSort('name')" title="Sort by Name">Name${getSortIcon('name')}</span>
+                    </th>
                     <th style="width:5%; padding:8px 8px; cursor:pointer;" onclick="ui.toggleOverviewSort('dist')">Dist ${getSortIcon('dist')}</th>
                     <th style="width:6%; padding:8px 8px; cursor:pointer;" onclick="ui.toggleOverviewSort('points')">Pts ${getSortIcon('points')}</th>
                     <th style="width:14%; padding:8px 8px;">Resources</th>
@@ -1514,18 +1569,6 @@ const ui = {
             "Ram": "🐏", "Catapult": "☄️", "Noble": "👑", "Paladin": "⚜️"
         };
 
-        const renderUnitString = (unitsObj, color = "#000") => {
-            let parts = [];
-            for (let u in DB.units) {
-                const count = unitsObj[u] || 0;
-                if (count > 0) {
-                    const icon = unitIcons[u] || u.substring(0, 1);
-                    parts.push(`${icon}${count}`);
-                }
-            }
-            return parts.length > 0 ? `<span style="color:${color}; margin-right:6px;">${parts.join(" ")}</span>` : "";
-        };
-
         // 4. Rows
         myVillages.forEach(v => {
             const isSelected = v.id === state.selectedVillageId;
@@ -1542,7 +1585,12 @@ const ui = {
                 const val = Math.floor(v.res[i]);
                 const color = (val > storage * 0.9) ? "#d32f2f" : "#333";
                 const icon = ["🌲", "🧱", "🔩"][i];
-                return `<span style="color:${color}; margin-right:6px;">${icon}${val}</span>`;
+
+                const bName = ["Timber Camp", "Clay Pit", "Iron Mine"][i];
+                const lvl = v.buildings[bName] || 0;
+                const notMaxed = lvl < MAX_RES_LEVEL ? "<sup style='color:#D32F2F; font-weight:bold; cursor:help;' title='Not Max Level'>^</sup>" : "";
+
+                return `<span style="color:${color}; margin-right:6px;">${icon}${val}${notMaxed}</span>`;
             }).join("");
 
             // Pop
@@ -1560,12 +1608,38 @@ const ui = {
             const bldgs = `${mkB('🏛️', 'Headquarters')}${mkB('⚔️', 'Barracks')}${mkB('🐴', 'Stable')}${mkB('🔧', 'Workshop')}${mkB('⚒️', 'Smithy')}${mkB('⚖️', 'Market')}${mkB('🌾', 'Farm')}${mkB('📦', 'Warehouse')}${mkB('🧱', 'Wall')}`;
 
             // Troops
-            const ownStr = renderUnitString(v.units, "#333");
+            const renderUnitString = (unitsObj, color = "#000", checkTech = false) => {
+                let parts = [];
+                for (let u in DB.units) {
+                    const count = unitsObj[u] || 0;
+                    if (count > 0) {
+                        const icon = unitIcons[u] || u.substring(0, 1);
+
+                        let suffix = "";
+                        if (checkTech) {
+                            const currentTech = (v.techs && v.techs[u]) ? v.techs[u] : 0;
+
+                            // --- FIX: Dynamic Max Level ---
+                            const maxTech = (u === "Noble") ? 1 : 3;
+
+                            if (currentTech < maxTech) {
+                                suffix = "<sup style='color:#1976D2; font-weight:bold; cursor:help;' title='Tech Upgrade Available'>^</sup>";
+                            }
+                        }
+
+                        parts.push(`<span style="color:${color}">${icon}${count}${suffix}</span>`);
+                    }
+                }
+                return parts.length > 0 ? `<span style="margin-right:6px;">${parts.join(" ")}</span>` : "";
+            };
+
+            const ownStr = renderUnitString(v.units, "#333", true);
+
             let supStr = "";
             if (v.stationed && v.stationed.length > 0) {
                 let totalSup = {};
                 v.stationed.forEach(s => { for (let u in s.units) totalSup[u] = (totalSup[u] || 0) + s.units[u]; });
-                supStr = renderUnitString(totalSup, "#1976D2");
+                supStr = renderUnitString(totalSup, "#1976D2", false);
             }
 
             let troopDisplay = ownStr;
@@ -1587,8 +1661,6 @@ const ui = {
             }
 
             const busy = v.queues.build.length > 0 ? "🔨" : "";
-
-            // Group Icon Logic
             const group = v.group || 'balanced';
             const groupIcon = this.getGroupIcon(group);
 
@@ -1706,23 +1778,26 @@ const ui = {
                     
                     </div>
 
-                <div id="tab-content-templates" style="display:none;">
+                    <div id="tab-content-templates" style="display:none;">
                     
                     <div style="background:#fff3e0; padding:10px; border-radius:5px; border:1px solid #ffe0b2; margin-bottom:10px;">
                         <h4 style="margin:0 0 5px 0;">⚔️ Offense Template</h4>
-                        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:5px;">
+                        <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:8px;">
                             ${this._renderTemplateInput('offense', 'Axe', '🪓')}
                             ${this._renderTemplateInput('offense', 'Light Cav', '🐴')}
                             ${this._renderTemplateInput('offense', 'Ram', '🐏')}
+                            ${this._renderTemplateInput('offense', 'Scout', '🔭')}
+                            ${this._renderTemplateInput('offense', 'Noble', '👑')}
                         </div>
                     </div>
 
                     <div style="background:#e3f2fd; padding:10px; border-radius:5px; border:1px solid #bbdefb; margin-bottom:10px;">
                         <h4 style="margin:0 0 5px 0;">🛡️ Defense Template</h4>
-                        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:5px;">
+                        <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:8px;">
                             ${this._renderTemplateInput('defense', 'Spear', '🔱')}
                             ${this._renderTemplateInput('defense', 'Sword', '🗡️')}
                             ${this._renderTemplateInput('defense', 'Heavy Cav', '♞')}
+                            ${this._renderTemplateInput('defense', 'Scout', '🔭')}
                         </div>
                     </div>
 
@@ -1785,85 +1860,135 @@ const ui = {
         let totalQueued = 0;
         let villagesAffected = 0;
 
-        state.villages.forEach(v => {
-            if (v.owner !== 'player') return;
+        try {
+            state.villages.forEach(v => {
+                if (v.owner !== 'player') return;
 
-            const group = v.group || 'balanced';
-            if (group === 'balanced') return;
+                const group = v.group || 'balanced';
+                if (group === 'balanced') return;
 
-            const template = state.templates[group];
-            if (!template) return;
+                const template = state.templates[group];
+                if (!template) return;
 
-            // --- STEP 1: CALCULATE DEFICIT (Using Total Count) ---
-            const needs = {};
-            let totalCost = [0, 0, 0];
-            let totalPopNeeded = 0;
-            let hasDeficit = false;
+                let trainedHere = false;
 
-            for (let unit in template) {
-                const target = template[unit];
-                if (target <= 0) continue;
+                // --- PHASE 1: NOBLE PRIORITY ---
+                // We handle Nobles exclusively first. They eat resources before anyone else.
+                if (template["Noble"]) {
+                    const target = template["Noble"];
 
-                // CHANGE: Use the new engine helper
-                const totalOwned = engine.getUnitCountTotal(v, unit);
+                    // Safe Count
+                    let totalOwned = 0;
+                    if (typeof engine.getUnitCountTotal === 'function') {
+                        totalOwned = engine.getUnitCountTotal(v, "Noble");
+                    } else {
+                        totalOwned = v.units["Noble"] || 0;
+                    }
 
-                const missing = target - totalOwned;
+                    const missing = target - totalOwned;
 
-                if (missing > 0) {
-                    needs[unit] = missing;
+                    if (missing > 0) {
+                        // Calculate Affordability specifically for Noble
+                        const d = DB.units["Noble"];
+                        const maxW = Math.floor(v.res[0] / d.cost[0]);
+                        const maxC = Math.floor(v.res[1] / d.cost[1]);
+                        const maxI = Math.floor(v.res[2] / d.cost[2]);
 
-                    const d = DB.units[unit];
-                    totalCost[0] += d.cost[0] * missing;
-                    totalCost[1] += d.cost[1] * missing;
-                    totalCost[2] += d.cost[2] * missing;
-                    totalPopNeeded += (d.pop || 1) * missing;
-                    hasDeficit = true;
+                        const availPop = engine.getPopLimit(v) - engine.getPopUsed(v);
+                        const maxP = Math.floor(availPop / (d.pop || 1));
+
+                        const toTrain = Math.min(missing, maxW, maxC, maxI, maxP);
+
+                        if (toTrain > 0) {
+                            // Recruit immediately. This updates v.res and v.popUsed instantly.
+                            actions.processRecruit("Noble", toTrain, v, true);
+                            totalQueued += toTrain;
+                            trainedHere = true;
+                        }
+                    }
                 }
-            }
 
-            if (!hasDeficit) return;
+                // --- PHASE 2: BALANCED FILL (Everything Else) ---
+                // Now we look at what resources are LEFT and balance the remaining troops
 
-            // --- STEP 2: CALCULATE BOTTLENECK (Resources & Pop) ---
-            // (Same "Fair Share" logic as before)
-            const availPop = engine.getPopLimit(v) - engine.getPopUsed(v);
+                const needs = {};
+                let totalCost = [0, 0, 0];
+                let totalPopNeeded = 0;
+                let hasDeficit = false;
 
-            const factorW = totalCost[0] > 0 ? v.res[0] / totalCost[0] : 1;
-            const factorC = totalCost[1] > 0 ? v.res[1] / totalCost[1] : 1;
-            const factorI = totalCost[2] > 0 ? v.res[2] / totalCost[2] : 1;
+                for (let unit in template) {
+                    if (unit === "Noble") continue; // Skip Noble, already done
 
-            // Important: We only have pop space for what is NOT yet built/queued
-            // engine.getPopUsed already counts queued units if your processRecruit updates it correctly.
-            // If popFactor is > 1, it means we have plenty of space.
-            const factorP = totalPopNeeded > 0 ? availPop / totalPopNeeded : 1;
+                    const target = template[unit];
+                    if (target <= 0) continue;
 
-            let limitFactor = Math.min(1.0, factorW, factorC, factorI, factorP);
+                    let totalOwned = 0;
+                    if (typeof engine.getUnitCountTotal === 'function') {
+                        totalOwned = engine.getUnitCountTotal(v, unit);
+                    } else {
+                        totalOwned = v.units[unit] || 0;
+                    }
 
-            if (limitFactor < 0.01) return;
+                    const missing = target - totalOwned;
 
-            // --- STEP 3: EXECUTE ---
-            let trainedHere = false;
+                    if (missing > 0) {
+                        needs[unit] = missing;
 
-            for (let unit in needs) {
-                const fullNeed = needs[unit];
-                const toTrain = Math.floor(fullNeed * limitFactor);
-
-                if (toTrain > 0) {
-                    game.processRecruit(unit, toTrain, v, true);
-                    totalQueued += toTrain;
-                    trainedHere = true;
+                        const d = DB.units[unit];
+                        totalCost[0] += d.cost[0] * missing;
+                        totalCost[1] += d.cost[1] * missing;
+                        totalCost[2] += d.cost[2] * missing;
+                        totalPopNeeded += (d.pop || 1) * missing;
+                        hasDeficit = true;
+                    }
                 }
-            }
 
-            if (trainedHere) villagesAffected++;
-        });
+                if (!hasDeficit) return; // Continue to next village
 
-        ui.showToast(`Queued ${totalQueued} units in ${villagesAffected} villages.`, "success");
-        document.getElementById('building-modal').style.display = 'none';
+                // Calculate Bottleneck Factor (0.0 - 1.0) based on REMAINING resources
+                const availPop = engine.getPopLimit(v) - engine.getPopUsed(v);
+
+                const factorW = totalCost[0] > 0 ? v.res[0] / totalCost[0] : 1;
+                const factorC = totalCost[1] > 0 ? v.res[1] / totalCost[1] : 1;
+                const factorI = totalCost[2] > 0 ? v.res[2] / totalCost[2] : 1;
+                const factorP = totalPopNeeded > 0 ? availPop / totalPopNeeded : 1;
+
+                let limitFactor = Math.min(1.0, factorW, factorC, factorI, factorP);
+
+                // Stop if we can't afford even 1% of the army
+                if (limitFactor < 0.01) return;
+
+                // Execute Scaled Training
+                for (let unit in needs) {
+                    const fullNeed = needs[unit];
+                    const toTrain = Math.floor(fullNeed * limitFactor);
+
+                    if (toTrain > 0) {
+                        actions.processRecruit(unit, toTrain, v, true);
+                        totalQueued += toTrain;
+                        trainedHere = true;
+                    }
+                }
+
+                if (trainedHere) villagesAffected++;
+            });
+
+            ui.showToast(`Queued ${totalQueued} units in ${villagesAffected} villages.`, "success");
+
+        } catch (err) {
+            console.error("Mass Training Error:", err);
+            ui.showToast("Error during Mass Training.", "error");
+        }
+
+        // Close Modal
+        const modal = document.getElementById('building-modal');
+        if (modal) modal.style.display = 'none';
+
         ui.renderOverview();
         requestAutoSave();
     },
     // --- NOTIFICATION SYSTEM ---
-    showToast: function(msg, type = 'info') {
+    showToast: function (msg, type = 'info') {
         // 1. Ensure Container Exists (Lazy Init)
         let container = document.getElementById('toast-container');
         if (!container) {
@@ -1876,11 +2001,11 @@ const ui = {
 
         // 2. Create Toast Element
         const toast = document.createElement('div');
-        
+
         // Choose Color based on type
         let bg = "#333"; // Default/Info (Black)
         let icon = "ℹ️";
-        
+
         if (type === 'success') { bg = "#4CAF50"; icon = "✅"; } // Green
         else if (type === 'error') { bg = "#f44336"; icon = "⚠️"; } // Red
         else if (type === 'warning') { bg = "#ff9800"; icon = "🔸"; } // Orange
@@ -1901,7 +2026,7 @@ const ui = {
             gap: 8px;
             min-width: 200px;
         `;
-        
+
         toast.innerHTML = `<span>${icon}</span> <span>${msg}</span>`;
 
         // 3. Append to Container
@@ -1917,7 +2042,7 @@ const ui = {
         setTimeout(() => {
             toast.style.opacity = "0";
             toast.style.transform = "translateX(20px)";
-            
+
             // Wait for fade out transition to finish before removing from DOM
             setTimeout(() => {
                 if (toast.parentNode) toast.parentNode.removeChild(toast);
