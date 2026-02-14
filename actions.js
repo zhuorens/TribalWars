@@ -43,14 +43,22 @@ const game = {
                     Math.floor(d.base[2] * Math.pow(d.factor, targetLvl))
                 ];
 
-                // Refund Pop (Use saved value if available, else calc)
+                // Refund Pop (Use saved value if available, else calc via consistent helper)
                 if (targetItem.pop !== undefined) {
                     v.popUsed -= targetItem.pop;
                 } else {
-                    const nextTotal = Math.round((d.basePop || 0) * Math.pow(d.factor, targetLvl + 1));
-                    const curTotal = (targetLvl === 0) ? 0 : Math.round((d.basePop || 0) * Math.pow(d.factor, targetLvl));
-                    v.popUsed -= Math.max(0, nextTotal - curTotal);
+
+                    const bName = targetItem.building;
+                    const lvl = targetItem.level; // The level we are cancelling
+
+                    const nextTotal = engine.getBuildingPop(bName, lvl);
+                    const prevTotal = engine.getBuildingPop(bName, lvl - 1);
+
+                    v.popUsed -= Math.max(0, nextTotal - prevTotal);
                 }
+
+                // Safety: Ensure we never go below zero
+                v.popUsed = Math.max(0, v.popUsed);
             }
             else if (queueType === 'research') {
                 const u = targetItem.unit;
@@ -105,10 +113,11 @@ const game = {
         const popAvail = engine.getPopLimit(v) - engine.getPopUsed(v);
 
         // Calculate Incremental Pop Needed
-        const nextTotalPop = Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl));
-        const currentTotalPop = (virtualLvl === 0)
-            ? 0
-            : Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl - 1));
+        const nextTotalPop = engine.getBuildingPop(b, virtualLvl);
+
+        // If virtualLvl is 1 (building from scratch), current pop is 0. 
+        // Otherwise, it's the pop of the previous level.
+        const currentTotalPop = engine.getBuildingPop(b, virtualLvl - 1);
 
         const popNeeded = Math.max(0, nextTotalPop - currentTotalPop);
 

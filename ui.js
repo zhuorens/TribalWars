@@ -744,18 +744,9 @@ const ui = {
                     Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
                 ];
 
-                // --- FIX: INCREMENTAL POPULATION CALCULATION ---
-                // Pop Total at Next Level (target)
-                // We use virtualLvl because that aligns with the cost formula (base * factor^L)
-                const nextTotalPop = Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl));
+                const nextTotalPop = engine.getBuildingPop(b, virtualLvl);
+                const currentTotalPop = engine.getBuildingPop(b, virtualLvl - 1);
 
-                // Pop Total at Current Level
-                // If level is 0, pop is 0. Else use virtualLvl - 1
-                const currentTotalPop = (virtualLvl === 0)
-                    ? 0
-                    : Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl - 1));
-
-                // The population needed is just the difference
                 const popNeeded = Math.max(0, nextTotalPop - currentTotalPop);
 
                 const hasRes = Math.floor(v.res[0]) >= cost[0] &&
@@ -786,10 +777,8 @@ const ui = {
         // Helper: Calculate Pop Required for Next Level
         // Logic: (Total Pop at Next Level) - (Total Pop at Current Level)
         const getPopNeeded = (virtualLvl) => {
-            const nextTotal = Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl));
-            const currentTotal = (virtualLvl === 0)
-                ? 0
-                : Math.round((d.basePop || 0) * Math.pow(d.factor, virtualLvl - 1));
+            const nextTotal = engine.getBuildingPop(bName, virtualLvl);
+            const currentTotal = engine.getBuildingPop(bName, virtualLvl - 1);
             return Math.max(0, nextTotal - currentTotal);
         };
 
@@ -1531,12 +1520,17 @@ const ui = {
         const container = document.getElementById('overview-list');
         if (!container) return;
 
+        // --- CONSTANTS ---
         const MAX_RES_LEVEL = 30;
+        const MAX_FARM_LEVEL = 30;
 
         // 1. Data Setup & Filter Logic
         let myVillages = state.villages.filter(v => v.owner === 'player');
         const currentVillage = engine.getCurrentVillage();
+
+        // Ensure defaults exist if not set
         const f = this.overviewFilters;
+        if (!f.alertType) f.alertType = 'none';
 
         // --- APPLY FILTERS ---
         myVillages = myVillages.filter(v => {
@@ -1558,6 +1552,26 @@ const ui = {
                 const lvl = v.buildings[f.buildType] || 0;
                 if (f.buildOp === '>' && lvl <= f.buildVal) return false;
                 if (f.buildOp === '<' && lvl >= f.buildVal) return false;
+            }
+
+            // D. Alert Filter (NEW)
+            if (f.alertType === 'res_95') {
+                const storage = engine.getStorage(v);
+                // Keep if ANY resource is >= 95% full
+                const isFull = v.res.some(r => r >= storage * 0.95);
+                if (!isFull) return false;
+            }
+
+            if (f.alertType === 'farm_90') {
+                const popUsed = engine.getPopUsed(v);
+                const popMax = engine.getPopLimit(v);
+                const farmLvl = v.buildings["Farm"] || 0;
+
+                // Keep if Pop >= 90% AND Farm is NOT Maxed
+                const isFull = (popUsed / popMax) >= 0.90;
+                const canUpgrade = farmLvl < MAX_FARM_LEVEL;
+
+                if (!isFull || !canUpgrade) return false;
             }
 
             return true;
@@ -1595,8 +1609,14 @@ const ui = {
         const groups = ['all', 'offense', 'defense', 'balanced'];
         const units = ['none', ...Object.keys(DB.units)];
         const buildings = ['none', ...Object.keys(DB.buildings)];
+        const alerts = [
+            { val: 'none', lbl: 'None' },
+            { val: 'res_95', lbl: '📦 Res ≥ 95%' },
+            { val: 'farm_90', lbl: '🌾 Farm ≥ 90% (Not Max)' }
+        ];
 
         const mkOpts = (arr, selected) => arr.map(x => `<option value="${x}" ${x === selected ? 'selected' : ''}>${x}</option>`).join('');
+        const mkAlertOpts = (arr, selected) => arr.map(x => `<option value="${x.val}" ${x.val === selected ? 'selected' : ''}>${x.lbl}</option>`).join('');
 
         let filterHtml = `
             <div style="background:#f1f1f1; padding:10px; border:1px solid #ddd; border-bottom:none; display:flex; gap:15px; align-items:center; flex-wrap:wrap; font-size:11px;">
@@ -1605,6 +1625,15 @@ const ui = {
                     <b>🏷️ Type:</b>
                     <select onchange="ui.setOverviewFilter('group', this.value)" style="padding:3px;">
                         ${mkOpts(groups, f.group)}
+                    </select>
+                </div>
+
+                <div style="width:1px; height:20px; background:#ccc;"></div>
+
+                <div style="display:flex; align-items:center; gap:5px;">
+                    <b>⚠️ Alerts:</b>
+                    <select onchange="ui.setOverviewFilter('alertType', this.value)" style="padding:3px; color:${f.alertType !== 'none' ? '#d32f2f' : '#333'}; font-weight:${f.alertType !== 'none' ? 'bold' : 'normal'}">
+                        ${mkAlertOpts(alerts, f.alertType)}
                     </select>
                 </div>
 
@@ -1623,8 +1652,6 @@ const ui = {
                         <input type="number" value="${f.unitVal}" onchange="ui.setOverviewFilter('unitVal', Number(this.value))" style="width:50px; padding:3px;">
                     ` : ''}
                 </div>
-
-                <div style="width:1px; height:20px; background:#ccc;"></div>
 
                 <div style="display:flex; align-items:center; gap:5px;">
                     <b>🏗️ Build:</b>
@@ -1708,10 +1735,17 @@ const ui = {
                 return `<span style="color:${color}; margin-right:6px;">${icon}${val}${notMaxed}</span>`;
             }).join("");
 
-            // Pop
+            // Pop (VISUAL LOGIC UPDATED)
             const popUsed = engine.getPopUsed(v);
             const popMax = engine.getPopLimit(v);
-            const popColor = (popUsed / popMax > 0.9) ? "#d32f2f" : "#444";
+            const farmLvl = v.buildings["Farm"] || 0;
+            const isFarmMaxed = farmLvl >= MAX_FARM_LEVEL;
+
+            // Only show red if >90% AND we can still upgrade the farm
+            let popColor = "#444";
+            if (!isFarmMaxed && (popUsed / popMax > 0.9)) {
+                popColor = "#d32f2f";
+            }
 
             // Buildings
             const b = v.buildings;
@@ -1863,109 +1897,180 @@ const ui = {
     },
 
     openMassActionModal: function () {
-        // Setup State if missing
-        if (!state.templates) state.templates = { offense: {}, defense: {} };
+        const modal = document.getElementById('building-modal');
+        if (!modal) return;
 
-        let html = `
-            <div style="padding:15px;">
-                
-                <div style="display:flex; border-bottom:1px solid #ccc; margin-bottom:15px;">
-                    <button class="btn-tab active" onclick="ui.switchMassTab('recruit')" id="tab-btn-recruit" style="flex:1; padding:10px; background:#e3f2fd; border:none; cursor:pointer;">Mass Recruit</button>
-                    <button class="btn-tab" onclick="ui.switchMassTab('templates')" id="tab-btn-templates" style="flex:1; padding:10px; background:#f1f1f1; border:none; cursor:pointer;">Edit Templates</button>
+        // 1. Structure: Header -> Tabs -> Content (Wrapped in Padding)
+        const html = `
+        <div class="modal-content" style="width:600px; background:white; border-radius:5px; box-shadow:0 0 15px rgba(0,0,0,0.5); overflow:hidden; display:flex; flex-direction:column;">
+            
+            <div class="modal-header" style="background:#333; color:white; padding:10px 15px; display:flex; justify-content:space-between; align-items:center;">
+                <h3 style="margin:0;">⚡ Mass Manager</h3>
+                <span class="close" onclick="document.getElementById('building-modal').style.display='none'" style="color:white; cursor:pointer; font-size:20px;">&times;</span>
+            </div>
+            
+            <div style="display:flex; border-bottom:1px solid #ddd; background:#f9f9f9;">
+                <button class="tab-btn active" onclick="ui.switchMassTab('recruit', this)" style="flex:1; padding:10px; border:none; cursor:pointer; background:none; font-weight:bold; color:#555; border-bottom:3px solid transparent;">⚔️ Recruit</button>
+                <button class="tab-btn" onclick="ui.switchMassTab('build', this)" style="flex:1; padding:10px; border:none; cursor:pointer; background:none; font-weight:bold; color:#555; border-bottom:3px solid transparent;">🏗️ Build</button>
+                <button class="tab-btn" onclick="ui.switchMassTab('research', this)" style="flex:1; padding:10px; border:none; cursor:pointer; background:none; font-weight:bold; color:#555; border-bottom:3px solid transparent;">🧪 Research</button>
+            </div>
+
+            <div style="padding:20px;">
+
+                <div id="mass-tab-recruit" style="display:block;">
+                    <p style="font-size:12px; color:#666; margin-bottom:15px;">
+                        Train troops based on your templates. 
+                        <br><i>Priority: Nobles > Remaining Resources divided fairly.</i>
+                    </p>
+                    <button class="btn btn-green" style="width:100%; padding:10px; margin-bottom:10px;" onclick="ui.executeTemplateTraining()">
+                        🚀 Execute Mass Training
+                    </button>
+                    
+                    <div style="text-align:right;">
+                        <a href="#" onclick="ui.toggleTemplateEditor()" style="font-size:12px; text-decoration:none; color:#2196F3;">✏️ Edit Templates</a>
+                    </div>
+
+                    <div id="tab-content-templates" style="display:none; margin-top:15px;"></div>
                 </div>
 
-                <div id="tab-content-recruit">
-                    <div style="background:#e8f5e9; padding:15px; border-radius:5px; border:1px solid #c8e6c9; margin-bottom:15px;">
-                        <h3 style="margin:0 0 5px 0; color:#2E7D32;">🤖 Auto-Train to Template</h3>
-                        <p style="font-size:11px; color:#555; margin-bottom:10px;">
-                            Automatically fills recruitment queues to match your Offense/Defense templates.
-                        </p>
-                        <button class="btn btn-blue" style="width:100%; padding:10px;" onclick="ui.executeTemplateTraining()">
-                            🚀 Train All Villages to Template
-                        </button>
+                <div id="mass-tab-build" style="display:none;">
+                    <div style="background:#e3f2fd; padding:15px; border-radius:4px; margin-bottom:15px; border:1px solid #bbdefb;">
+                        <b>🏗️ Smart Infrastructure</b><br>
                     </div>
-                    
-                    </div>
-
-                    <div id="tab-content-templates" style="display:none;">
-                    
-                    <div style="background:#fff3e0; padding:10px; border-radius:5px; border:1px solid #ffe0b2; margin-bottom:10px;">
-                        <h4 style="margin:0 0 5px 0;">⚔️ Offense Template</h4>
-                        <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:8px;">
-                            ${this._renderTemplateInput('offense', 'Axe', '🪓')}
-                            ${this._renderTemplateInput('offense', 'Light Cav', '🐴')}
-                            ${this._renderTemplateInput('offense', 'Ram', '🐏')}
-                            ${this._renderTemplateInput('offense', 'Scout', '🔭')}
-                            ${this._renderTemplateInput('offense', 'Noble', '👑')}
-                        </div>
-                    </div>
-
-                    <div style="background:#e3f2fd; padding:10px; border-radius:5px; border:1px solid #bbdefb; margin-bottom:10px;">
-                        <h4 style="margin:0 0 5px 0;">🛡️ Defense Template</h4>
-                        <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:8px;">
-                            ${this._renderTemplateInput('defense', 'Spear', '🔱')}
-                            ${this._renderTemplateInput('defense', 'Sword', '🗡️')}
-                            ${this._renderTemplateInput('defense', 'Heavy Cav', '♞')}
-                            ${this._renderTemplateInput('defense', 'Scout', '🔭')}
-                        </div>
-                    </div>
-
-                    <button class="btn" style="width:100%; background:#333; color:white;" onclick="ui.saveTemplates()">
-                        💾 Save Templates
+                    <button class="btn btn-blue" style="width:100%; padding:10px;" onclick="ui.massBuildSmart()">
+                        🏗️ Run Smart Build
                     </button>
                 </div>
 
+                <div id="mass-tab-research" style="display:none;">
+                     <div style="background:#fff3e0; padding:15px; border-radius:4px; margin-bottom:15px; border:1px solid #ffe0b2;">
+                        <b>🧪 Auto-Research</b><br>
+                    </div>
+                    <button class="btn btn-purple" style="width:100%; padding:10px;" onclick="ui.massResearchSmart()">
+                        🧪 Run Mass Research
+                    </button>
+                </div>
+
+            </div> </div>`;
+
+        modal.innerHTML = html;
+        modal.style.display = 'flex';
+
+        // CSS for Tabs logic (simple active class toggle)
+        ui.switchMassTab = function (tabName, btn) {
+            ['recruit', 'build', 'research'].forEach(t => {
+                const el = document.getElementById(`mass-tab-${t}`);
+                if (el) el.style.display = (t === tabName) ? 'block' : 'none';
+            });
+
+            // Visuals
+            const allBtns = modal.querySelectorAll('.tab-btn');
+            allBtns.forEach(b => {
+                b.style.borderBottom = "3px solid transparent";
+                b.style.color = "#555";
+            });
+
+            if (btn) {
+                btn.style.borderBottom = "3px solid #2196F3";
+                btn.style.color = "#2196F3";
+            }
+        };
+
+        // Initialize first tab state visually
+        const firstBtn = modal.querySelector('.tab-btn');
+        if (firstBtn) ui.switchMassTab('recruit', firstBtn);
+    },
+
+    // --- TEMPLATE EDITOR TOGGLE ---
+    toggleTemplateEditor: function () {
+        const container = document.getElementById('tab-content-templates');
+        if (!container) return;
+
+        // Toggle Display
+        if (container.style.display === 'none') {
+            container.style.display = 'block';
+
+            // Render Inputs if empty (Lazy Load)
+            if (container.innerHTML.trim().length < 50) {
+                // Only render if it hasn't been rendered yet
+                this.renderTemplateEditor(container);
+            }
+        } else {
+            container.style.display = 'none';
+        }
+    },
+
+    // --- TEMPLATE EDITOR RENDERER ---
+    renderTemplateEditor: function (container) {
+        // Helper to generate input HTML
+        const mkInput = (group, unit, icon) => {
+            const val = (state.templates[group] && state.templates[group][unit]) || 0;
+            return `
+            <div style="display:flex; align-items:center; background:white; padding:4px; border:1px solid #ddd; border-radius:3px;">
+                <span style="font-size:16px; margin-right:5px;" title="${unit}">${icon}</span>
+                <input type="number" id="tpl-${group}-${unit.replace(/\s/g, '')}" value="${val}" 
+                    style="width:50px; border:none; text-align:right; font-weight:bold;" placeholder="0">
+            </div>`;
+        };
+
+        const html = `
+            <div style="background:#fff3e0; padding:10px; border-radius:5px; border:1px solid #ffe0b2; margin-bottom:10px;">
+                <h4 style="margin:0 0 5px 0;">⚔️ Offense Template</h4>
+                <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:5px;">
+                    ${mkInput('offense', 'Axe', '🪓')}
+                    ${mkInput('offense', 'Light Cav', '🐴')}
+                    ${mkInput('offense', 'Ram', '🐏')}
+                    ${mkInput('offense', 'Scout', '🔭')}
+                    ${mkInput('offense', 'Noble', '👑')}
+                </div>
             </div>
+
+            <div style="background:#e3f2fd; padding:10px; border-radius:5px; border:1px solid #bbdefb; margin-bottom:10px;">
+                <h4 style="margin:0 0 5px 0;">🛡️ Defense Template</h4>
+                <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:5px;">
+                    ${mkInput('defense', 'Spear', '🔱')}
+                    ${mkInput('defense', 'Sword', '🗡️')}
+                    ${mkInput('defense', 'Heavy Cav', '♞')}
+                    ${mkInput('defense', 'Scout', '🔭')}
+                </div>
+            </div>
+
+            <button class="btn" style="width:100%; background:#333; color:white; margin-top:5px;" onclick="ui.saveTemplates()">
+                💾 Save Templates
+            </button>
         `;
 
-        document.getElementById('b-modal-title').innerText = "Command Center";
-        document.getElementById('b-modal-desc').innerHTML = "";
-        document.getElementById('b-modal-cost').innerHTML = html;
-        document.getElementById('b-modal-btn').style.display = 'none';
-        document.getElementById('building-modal').style.display = 'flex';
+        container.innerHTML = html;
     },
 
-    // Helper for Inputs
-    _renderTemplateInput: function (type, unit, icon) {
-        const val = state.templates[type][unit] || 0;
-        return `
-            <div style="font-size:11px;">
-                ${icon} ${unit}
-                <input type="number" id="tpl-${type}-${unit.replace(' ', '')}" value="${val}" 
-                style="width:100%; border:1px solid #ccc; padding:3px;">
-            </div>
-        `;
-    },
-
-    // Tab Switcher
-    switchMassTab: function (tab) {
-        document.getElementById('tab-content-recruit').style.display = tab === 'recruit' ? 'block' : 'none';
-        document.getElementById('tab-content-templates').style.display = tab === 'templates' ? 'block' : 'none';
-
-        document.getElementById('tab-btn-recruit').style.background = tab === 'recruit' ? '#e3f2fd' : '#f1f1f1';
-        document.getElementById('tab-btn-templates').style.background = tab === 'templates' ? '#e3f2fd' : '#f1f1f1';
-    },
-
-    // Save Logic
+    // --- SAVE TEMPLATES ---
     saveTemplates: function () {
-        const getVal = (id) => Number(document.getElementById(id).value) || 0;
+        const getVal = (id) => {
+            const el = document.getElementById(id);
+            return el ? (parseInt(el.value) || 0) : 0;
+        };
 
         state.templates.offense = {
             "Axe": getVal('tpl-offense-Axe'),
             "Light Cav": getVal('tpl-offense-LightCav'),
             "Ram": getVal('tpl-offense-Ram'),
             "Scout": getVal('tpl-offense-Scout'),
-            "Noble": getVal('tpl-offense-Noble'),
+            "Noble": getVal('tpl-offense-Noble')
         };
+
         state.templates.defense = {
             "Spear": getVal('tpl-defense-Spear'),
             "Sword": getVal('tpl-defense-Sword'),
             "Heavy Cav": getVal('tpl-defense-HeavyCav'),
-            "Scout": getVal('tpl-offense-Scout')
+            "Scout": getVal('tpl-defense-Scout')
         };
 
         ui.showToast("Templates Saved!", "success");
-        ui.switchMassTab('recruit');
+        // Hide editor after save to clean up UI
+        document.getElementById('tab-content-templates').style.display = 'none';
+
+        // Trigger auto-save
+        requestAutoSave();
     },
 
     executeTemplateTraining: function () {
@@ -2098,6 +2203,168 @@ const ui = {
 
         ui.renderOverview();
         requestAutoSave();
+    },
+    // --- MASS BUILDING LOGIC ---
+    massBuildSmart: function () {
+        let count = 0;
+
+        // --- CONFIGURATION ---
+        // Use global CONFIG or default to 2 if undefined
+        const QUEUE_LIMIT = (typeof CONFIG !== 'undefined' && CONFIG.buildQueueLimit) ? CONFIG.buildQueueLimit : 2;
+
+        const SAFE_BUFFER = 1.5;   // Infra requires 1.5x cost (save for troops)
+        const GREEDY_BUFFER = 1.0; // Mines use 1.0x cost (spend everything)
+        const MAX_RES_LEVEL = 30;  // Max level for Mines
+
+        // Prioritized Infrastructure (Built only after Economy is maxed)
+        const infraOrder = [
+            { name: "Headquarters", max: 30 },
+            { name: "Wall", max: 20 },
+            { name: "Barracks", max: 25 },
+            { name: "Stable", max: 20 },
+            { name: "Market", max: 25 },
+            { name: "Smithy", max: 10 }, // UPDATED: Max 10
+            { name: "Academy", max: 1 }
+        ];
+
+        state.villages.forEach(v => {
+            if (v.owner !== 'player') return;
+
+            // 1. Queue Check (Dynamic Limit)
+            if (v.queues.build.length >= QUEUE_LIMIT) return;
+
+            // 2. Helpers
+            const getLvl = (name) => v.buildings[name] || 0;
+
+            // Affordability Check
+            const canAfford = (bName, buffer) => {
+                if (!DB.buildings[bName]) return false;
+                // Calculate cost for the NEXT level
+                const cost = DB.buildings[bName].cost.map(c => Math.floor(c * Math.pow(1.2, getLvl(bName))));
+
+                return v.res[0] >= cost[0] * buffer &&
+                    v.res[1] >= cost[1] * buffer &&
+                    v.res[2] >= cost[2] * buffer;
+            };
+
+            let target = null;
+            let infraAllowed = false; // Default: Infra is locked
+
+            // --- PHASE 1: CRITICAL (Pop & Storage) ---
+            // Overrides everything. If we can't grow, we die.
+            const popPct = engine.getPopUsed(v) / engine.getPopLimit(v);
+            const storage = engine.getStorage(v);
+            const resPct = Math.max(v.res[0], v.res[1], v.res[2]) / storage;
+
+            // 95% Pop -> Farm (if not maxed)
+            if (popPct > 0.95 && getLvl("Farm") < 30) {
+                if (canAfford("Farm", 1.0)) target = "Farm";
+            }
+            // 90% Storage -> Warehouse (if not maxed)
+            else if (resPct > 0.90 && getLvl("Warehouse") < 30) {
+                if (canAfford("Warehouse", 1.0)) target = "Warehouse";
+            }
+
+            // --- PHASE 2: STRICT ECONOMY (Mines First) ---
+            if (!target) {
+                const mines = [
+                    { name: "Timber Camp", lvl: getLvl("Timber Camp") },
+                    { name: "Clay Pit", lvl: getLvl("Clay Pit") },
+                    { name: "Iron Mine", lvl: getLvl("Iron Mine") }
+                ];
+
+                // Sort by level (ascending) -> always upgrade the lowest one
+                mines.sort((a, b) => a.lvl - b.lvl);
+                const lowestMine = mines[0];
+
+                // Are mines maxed?
+                if (lowestMine.lvl < MAX_RES_LEVEL) {
+                    // MINES ARE NOT MAXED.
+                    // Attempt to build the mine.
+                    if (canAfford(lowestMine.name, GREEDY_BUFFER)) {
+                        target = lowestMine.name;
+                    }
+                    // STRICT LOCK:
+                    // If we can't afford the mine, we do NOTHING.
+                    // We DO NOT fail over to infrastructure. We save resources.
+                    infraAllowed = false;
+                } else {
+                    // All mines are Level 30. Unlock Infrastructure.
+                    infraAllowed = true;
+                }
+            }
+
+            // --- PHASE 3: SAFE INFRASTRUCTURE ---
+            // Only runs if Mines are Level 30 (or Critical passed).
+            if (!target && infraAllowed) {
+                for (let b of infraOrder) {
+                    const currentLvl = getLvl(b.name);
+
+                    if (DB.buildings[b.name] && currentLvl < b.max) {
+                        // Use SAFE_BUFFER (1.5x) to leave room for troops
+                        if (canAfford(b.name, SAFE_BUFFER)) {
+                            target = b.name;
+                            break; // Found our project
+                        }
+                    }
+                }
+            }
+
+            // --- PHASE 4: EXECUTE ---
+            if (target) {
+                const result = game.build(target, v);
+                if (result) count++;
+            }
+        });
+
+        ui.showToast(`Started construction in ${count} villages.`);
+        ui.renderOverview();
+    },
+
+    massResearchSmart: function () {
+        let count = 0;
+
+        // Templates based on your request
+        const techTemplates = {
+            'offense': ["Axe", "Light Cav", "Scout", "Heavy Cav"],
+            'defense': ["Spear", "Sword", "Scout", "Heavy Cav"]
+        };
+
+        state.villages.forEach(v => {
+            // 1. Basic Checks
+            if (v.owner !== 'player') return;
+            if (!v.buildings["Smithy"]) return;
+
+            // 2. BUSY CHECK (Critical Fix)
+            // If the village is already researching something, skip it.
+            if (v.queues.research && v.queues.research.length > 0) return;
+
+            // 3. Determine Template
+            const group = v.group || 'balanced';
+            // Default balanced -> defense (safer)
+            const list = techTemplates[group] || techTemplates['defense'];
+
+            // 4. Iterate Priorities
+            for (let unit of list) {
+                const currentLvl = (v.techs && v.techs[unit]) ? v.techs[unit] : 0;
+
+                // If not maxed (Level 3)
+                if (currentLvl < 3) {
+                    // Attempt Research
+                    const result = game.research(unit, v);
+
+                    if (result) {
+                        count++;
+                        // IMPORTANT: Break immediately. 
+                        // We successfully started 1 research, so this village is now busy.
+                        break;
+                    }
+                }
+            }
+        });
+
+        ui.showToast(`Started research in ${count} villages.`);
+        ui.renderOverview();
     },
     // --- NOTIFICATION SYSTEM ---
     showToast: function (msg, type = 'info') {

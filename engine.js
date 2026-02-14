@@ -126,7 +126,16 @@ const engine = {
         };
     },
 
-    // Add these inside your engine object:
+    getBuildingPop: function (bName, level) {
+        if (level <= 0) return 0;
+
+        const b = DB.buildings[bName];
+        if (!b || !b.basePop) return 0;
+
+        // STANDARD FORMULA: Base * (Factor ^ (Level - 1))
+        // Example: Level 1 = Base. Level 2 = Base * Factor.
+        return Math.round(b.basePop * Math.pow((b.factor - 1) * 2 / 3 + 1, level - 1));
+    },
 
     getPopLimit: function (village) {
         const farmLvl = village.buildings["Farm"] || 0;
@@ -144,12 +153,7 @@ const engine = {
         for (let bName in village.buildings) {
             let level = village.buildings[bName];
             if (level > 0 && DB.buildings[bName]) {
-                const b = DB.buildings[bName];
-                if (b.basePop > 0) {
-                    // Formula: Base * (Factor ^ (Level - 1))
-                    // Note: Ensure this formula matches your DB/Excel logic exactly
-                    used += Math.round(b.basePop * Math.pow((b.factor - 1) * 3 / 4 + 1, level - 1));
-                }
+                used += this.getBuildingPop(bName, level);
             }
         }
 
@@ -543,9 +547,15 @@ const engine = {
                         if (Math.max(...cost) > storageCap) return false;
 
                         if (bKey !== "Farm") {
-                            const nextPop = Math.round((d.basePop || 0) * Math.pow(d.factor, currentLvl + 1));
-                            const curPop = (currentLvl === 0) ? 0 : Math.round((d.basePop || 0) * factor);
-                            if ((nextPop - curPop) > popAvail) return false;
+                            // Check cost for the NEXT level (currentLvl + 1)
+                            const nextTotal = engine.getBuildingPop(bKey, currentLvl + 1);
+
+                            // Check cost for the CURRENT level
+                            const curTotal = engine.getBuildingPop(bKey, currentLvl);
+
+                            const popNeeded = Math.max(0, nextTotal - curTotal);
+
+                            if (popNeeded > popAvail) return false;
                         }
                         return true;
                     });
