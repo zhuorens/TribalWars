@@ -1,6 +1,36 @@
 // --- UI (Display) ---
 const ui = {
     selTile: null, selBuild: null,
+    // Add to ui object properties
+    overviewFilters: {
+        group: 'all',     // all, offense, defense, balanced
+        unitType: 'none', // none, Spear, Axe, etc.
+        unitOp: '>',      // >, <
+        unitVal: 0,
+        buildType: 'none',// none, Wall, Farm, etc.
+        buildOp: '<',     // >, <
+        buildVal: 20
+    },
+
+    // Helper to toggle filters
+    setOverviewFilter: function (key, val) {
+        this.overviewFilters[key] = val;
+        this.renderOverview();
+    },
+
+    // Add to ui object
+    clearOverviewFilters: function () {
+        this.overviewFilters = {
+            group: 'all',
+            unitType: 'none',
+            unitOp: '>',
+            unitVal: 0,
+            buildType: 'none',
+            buildOp: '<',
+            buildVal: 20
+        };
+        this.renderOverview();
+    },
 
     init: function () {
         if (!document.getElementById('map-tooltip')) {
@@ -643,11 +673,11 @@ const ui = {
         select.value = v.id;
     },
 
-    switchVillage: function (id) {
+    switchVillage: function (id, tab = 'hq') {
         state.selectedVillageId = parseFloat(id);
         ui.refresh(); const v = engine.getCurrentVillage(); state.mapView.x = v.x; state.mapView.y = v.y; ui.renderMap();
-        const hqBtn = document.querySelector("button[onclick*='hq']");
-        ui.showTab('hq', hqBtn);
+        const hqBtn = document.querySelector("button[onclick*=" + tab + "]");
+        ui.showTab(tab, hqBtn);
     },
 
     renameVillage: function () {
@@ -1503,9 +1533,35 @@ const ui = {
 
         const MAX_RES_LEVEL = 30;
 
-        // 1. Data Setup
+        // 1. Data Setup & Filter Logic
         let myVillages = state.villages.filter(v => v.owner === 'player');
         const currentVillage = engine.getCurrentVillage();
+        const f = this.overviewFilters;
+
+        // --- APPLY FILTERS ---
+        myVillages = myVillages.filter(v => {
+            // A. Group Filter
+            if (f.group !== 'all') {
+                const g = v.group || 'balanced';
+                if (g !== f.group) return false;
+            }
+
+            // B. Unit Filter
+            if (f.unitType !== 'none') {
+                const count = v.units[f.unitType] || 0;
+                if (f.unitOp === '>' && count <= f.unitVal) return false;
+                if (f.unitOp === '<' && count >= f.unitVal) return false;
+            }
+
+            // C. Building Filter
+            if (f.buildType !== 'none') {
+                const lvl = v.buildings[f.buildType] || 0;
+                if (f.buildOp === '>' && lvl <= f.buildVal) return false;
+                if (f.buildOp === '<' && lvl >= f.buildVal) return false;
+            }
+
+            return true;
+        });
 
         // 2. Sorting
         const sortKey = this.overviewSort.key;
@@ -1535,8 +1591,67 @@ const ui = {
 
         const getSortIcon = (key) => (this.overviewSort.key !== key) ? `<span style="opacity:0.3">↕</span>` : (this.overviewSort.asc ? "▲" : "▼");
 
+        // --- FILTER UI HTML ---
+        const groups = ['all', 'offense', 'defense', 'balanced'];
+        const units = ['none', ...Object.keys(DB.units)];
+        const buildings = ['none', ...Object.keys(DB.buildings)];
+
+        const mkOpts = (arr, selected) => arr.map(x => `<option value="${x}" ${x === selected ? 'selected' : ''}>${x}</option>`).join('');
+
+        let filterHtml = `
+            <div style="background:#f1f1f1; padding:10px; border:1px solid #ddd; border-bottom:none; display:flex; gap:15px; align-items:center; flex-wrap:wrap; font-size:11px;">
+                
+                <div style="display:flex; align-items:center; gap:5px;">
+                    <b>🏷️ Type:</b>
+                    <select onchange="ui.setOverviewFilter('group', this.value)" style="padding:3px;">
+                        ${mkOpts(groups, f.group)}
+                    </select>
+                </div>
+
+                <div style="width:1px; height:20px; background:#ccc;"></div>
+
+                <div style="display:flex; align-items:center; gap:5px;">
+                    <b>⚔️ Units:</b>
+                    <select onchange="ui.setOverviewFilter('unitType', this.value)" style="padding:3px;">
+                        ${mkOpts(units, f.unitType)}
+                    </select>
+                    ${f.unitType !== 'none' ? `
+                        <select onchange="ui.setOverviewFilter('unitOp', this.value)" style="padding:3px;">
+                            <option value=">" ${f.unitOp === '>' ? 'selected' : ''}>&gt;</option>
+                            <option value="<" ${f.unitOp === '<' ? 'selected' : ''}>&lt;</option>
+                        </select>
+                        <input type="number" value="${f.unitVal}" onchange="ui.setOverviewFilter('unitVal', Number(this.value))" style="width:50px; padding:3px;">
+                    ` : ''}
+                </div>
+
+                <div style="width:1px; height:20px; background:#ccc;"></div>
+
+                <div style="display:flex; align-items:center; gap:5px;">
+                    <b>🏗️ Build:</b>
+                    <select onchange="ui.setOverviewFilter('buildType', this.value)" style="padding:3px;">
+                        ${mkOpts(buildings, f.buildType)}
+                    </select>
+                    ${f.buildType !== 'none' ? `
+                        <select onchange="ui.setOverviewFilter('buildOp', this.value)" style="padding:3px;">
+                            <option value=">" ${f.buildOp === '>' ? 'selected' : ''}>&gt;</option>
+                            <option value="<" ${f.buildOp === '<' ? 'selected' : ''}>&lt;</option>
+                        </select>
+                        <input type="number" value="${f.buildVal}" onchange="ui.setOverviewFilter('buildVal', Number(this.value))" style="width:40px; padding:3px;">
+                    ` : ''}
+                </div>
+
+                <button class="btn-mini" onclick="ui.clearOverviewFilters()" style="margin-left:auto; background:#757575; color:white; border:none; padding:4px 10px; border-radius:3px; cursor:pointer;" title="Reset all filters">
+                    ✖ Clear
+                </button>
+            </div>
+            
+            <div style="background:#fff; border-bottom:1px solid #ddd; padding:5px 10px; font-size:10px; color:#666;">
+                Showing <b>${myVillages.length}</b> villages matching criteria.
+            </div>
+        `;
+
         // 3. Table Header
-        let html = `
+        let html = filterHtml + `
         <div style="overflow-x:auto; background:#fff; border-radius:3px; box-shadow:0 1px 2px rgba(0,0,0,0.1);">
         <table class="rank-table" style="width:100%; min-width:1200px; font-size:12px; border-collapse: collapse;">
             <thead>
@@ -1614,19 +1729,14 @@ const ui = {
                     const count = unitsObj[u] || 0;
                     if (count > 0) {
                         const icon = unitIcons[u] || u.substring(0, 1);
-
                         let suffix = "";
                         if (checkTech) {
                             const currentTech = (v.techs && v.techs[u]) ? v.techs[u] : 0;
-
-                            // --- FIX: Dynamic Max Level ---
                             const maxTech = (u === "Noble") ? 1 : 3;
-
                             if (currentTech < maxTech) {
                                 suffix = "<sup style='color:#1976D2; font-weight:bold; cursor:help;' title='Tech Upgrade Available'>^</sup>";
                             }
                         }
-
                         parts.push(`<span style="color:${color}">${icon}${count}${suffix}</span>`);
                     }
                 }
@@ -1634,7 +1744,6 @@ const ui = {
             };
 
             const ownStr = renderUnitString(v.units, "#333", true);
-
             let supStr = "";
             if (v.stationed && v.stationed.length > 0) {
                 let totalSup = {};
@@ -1844,12 +1953,15 @@ const ui = {
         state.templates.offense = {
             "Axe": getVal('tpl-offense-Axe'),
             "Light Cav": getVal('tpl-offense-LightCav'),
-            "Ram": getVal('tpl-offense-Ram')
+            "Ram": getVal('tpl-offense-Ram'),
+            "Scout": getVal('tpl-offense-Scout'),
+            "Noble": getVal('tpl-offense-Noble'),
         };
         state.templates.defense = {
             "Spear": getVal('tpl-defense-Spear'),
             "Sword": getVal('tpl-defense-Sword'),
-            "Heavy Cav": getVal('tpl-defense-HeavyCav')
+            "Heavy Cav": getVal('tpl-defense-HeavyCav'),
+            "Scout": getVal('tpl-offense-Scout')
         };
 
         ui.showToast("Templates Saved!", "success");
@@ -1901,7 +2013,7 @@ const ui = {
 
                         if (toTrain > 0) {
                             // Recruit immediately. This updates v.res and v.popUsed instantly.
-                            actions.processRecruit("Noble", toTrain, v, true);
+                            game.processRecruit("Noble", toTrain, v, true);
                             totalQueued += toTrain;
                             trainedHere = true;
                         }
@@ -1964,7 +2076,7 @@ const ui = {
                     const toTrain = Math.floor(fullNeed * limitFactor);
 
                     if (toTrain > 0) {
-                        actions.processRecruit(unit, toTrain, v, true);
+                        game.processRecruit(unit, toTrain, v, true);
                         totalQueued += toTrain;
                         trainedHere = true;
                     }
