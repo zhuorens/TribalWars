@@ -42,8 +42,8 @@ body { font-family: 'Segoe UI', sans-serif; background-color: #3b2e2a; color: #3
 }
 
 .tile {
-    width: 38px;  
-    height: 38px;
+    width: 40px;  
+    height: 40px;
     background-color: #8d6e63;
     cursor: pointer;
     position: relative;

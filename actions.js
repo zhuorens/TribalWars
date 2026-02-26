@@ -89,73 +89,97 @@ const game = {
         requestAutoSave();
     },
 
-    build: function (b) {
-        const v = engine.getCurrentVillage();
+    build: function (b, targetVillage = null) {
+        // 1. Determine Context
+        const isMassAction = !!targetVillage; // true if running from Mass Manager
+        const v = targetVillage || engine.getCurrentVillage();
         const d = DB.buildings[b];
 
+        // 2. Calculate Virtual Level (Current + Queue)
         const queuedCount = v.queues.build.filter(q => q.building === b).length;
-        const virtualLvl = v.buildings[b] + queuedCount;
+        // This is the level we HAVE (or will have). We are building the NEXT one.
+        const currentVirtualLvl = (v.buildings[b] || 0) + queuedCount;
+        const targetLvl = currentVirtualLvl + 1;
 
-        if (virtualLvl >= d.maxLevel) { alert(T('maxLevel')); return; }
-
-        if (v.queues.build.length >= CONFIG.buildQueueLimit) {
-            alert(T('queue_full'));
-            return;
+        // 3. Check Max Level
+        if (currentVirtualLvl >= d.maxLevel) {
+            if (!isMassAction) alert(T('maxLevel'));
+            return false; // FAIL
         }
 
+        // 4. Check Queue Limit
+        if (v.queues.build.length >= CONFIG.buildQueueLimit) {
+            if (!isMassAction) alert(T('queue_full'));
+            return false; // FAIL
+        }
+
+        // 5. Calculate Cost
+        // Use currentVirtualLvl as exponent (Level 0 -> Base Cost)
         const c = [
-            Math.floor(d.base[0] * Math.pow(d.factor, virtualLvl)),
-            Math.floor(d.base[1] * Math.pow(d.factor, virtualLvl)),
-            Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
+            Math.floor(d.base[0] * Math.pow(d.factor, currentVirtualLvl)),
+            Math.floor(d.base[1] * Math.pow(d.factor, currentVirtualLvl)),
+            Math.floor(d.base[2] * Math.pow(d.factor, currentVirtualLvl))
         ];
 
-        // --- POPULATION CHECK ---
+        // 6. Check Resources
+        if (v.res[0] < c[0] || v.res[1] < c[1] || v.res[2] < c[2]) {
+            if (!isMassAction) alert(T('resLimit'));
+            return false; // FAIL
+        }
+
+        // 7. Check Population
         const popAvail = engine.getPopLimit(v) - engine.getPopUsed(v);
 
-        // Calculate Incremental Pop Needed
-        const nextTotalPop = engine.getBuildingPop(b, virtualLvl);
-
-        // If virtualLvl is 1 (building from scratch), current pop is 0. 
-        // Otherwise, it's the pop of the previous level.
-        const currentTotalPop = engine.getBuildingPop(b, virtualLvl - 1);
-
-        const popNeeded = Math.max(0, nextTotalPop - currentTotalPop);
+        // Calculate Pop Difference (Level X -> Level X+1)
+        // If helper engine.getBuildingPop(name, level) exists:
+        const nextTotalPop = engine.getBuildingPop(b, targetLvl);
+        const curTotalPop = engine.getBuildingPop(b, currentVirtualLvl);
+        const popNeeded = Math.max(0, nextTotalPop - curTotalPop);
 
         // Allow Farm/Warehouse/Storage to build even if pop is full
         const ignorePop = (b === "Farm" || b === "Warehouse");
 
         if (!ignorePop && popAvail < popNeeded) {
-            alert("Not enough population space!");
-            return;
+            if (!isMassAction) alert("Not enough population space!");
+            return false; // FAIL
         }
 
-        if (v.res[0] >= c[0] && v.res[1] >= c[1] && v.res[2] >= c[2]) {
-            v.res[0] -= c[0]; v.res[1] -= c[1]; v.res[2] -= c[2];
+        // --- EXECUTE SUCCESS ---
 
-            // Deduct Population Immediately
-            if (!v.popUsed) v.popUsed = 0;
-            v.popUsed += popNeeded;
+        // Deduct Resources
+        v.res[0] -= c[0];
+        v.res[1] -= c[1];
+        v.res[2] -= c[2];
 
-            const hqLvl = v.buildings["Headquarters"] || 1;
-            const speedMod = Math.pow(0.95, hqLvl);
-            const duration = Math.floor(d.time * Math.pow(1.2, virtualLvl) * speedMod) * 1000;
+        // Deduct Population Immediately (Reserve it)
+        if (!v.popUsed) v.popUsed = 0;
+        v.popUsed += popNeeded;
 
-            const lastFinish = v.queues.build.length > 0
-                ? v.queues.build[v.queues.build.length - 1].finish
-                : Date.now();
+        // Calculate Duration
+        const hqLvl = v.buildings["Headquarters"] || 1;
+        const speedMod = Math.pow(0.95, hqLvl);
+        const duration = Math.floor(d.time * Math.pow(1.2, currentVirtualLvl) * speedMod) * 1000;
 
-            v.queues.build.push({
-                building: b,
-                duration: duration,
-                finish: lastFinish + duration,
-                pop: popNeeded // Save the pop cost for easier cancellation later
-            });
+        // Determine Start Time
+        const lastFinish = v.queues.build.length > 0
+            ? v.queues.build[v.queues.build.length - 1].finish
+            : Date.now();
 
+        // Push to Queue
+        v.queues.build.push({
+            building: b,
+            duration: duration,
+            finish: lastFinish + duration,
+            pop: popNeeded // Save cost for cancellation
+        });
+
+        // UI Updates (Only for current village view)
+        if (!isMassAction) {
             ui.refresh();
-            requestAutoSave();
-        } else {
-            alert(T('resLimit'));
         }
+
+        requestAutoSave();
+        return true; // SUCCESS
     },
     recruit: function (u) { const amt = parseInt(prompt("Amount?") || 0); game.processRecruit(u, amt); },
     recruitMax: function (u) {
@@ -234,23 +258,73 @@ const game = {
             if (!suppressUI) alert(T('resLimit'));
         }
     },
-    research: function (u) {
-        const v = engine.getCurrentVillage(); if (!v.techs) v.techs = {}; const curLvl = v.techs[u] || 1; const maxLvl = DB.units[u].maxLevel || 3;
-        if (curLvl >= maxLvl) { alert(T('maxLevel')); return; }
+    research: function (u, targetVillage = null) {
+        // 1. Determine Context
+        // If targetVillage is passed, we are in "Mass Mode" (suppress UI updates)
+        const isMassAction = !!targetVillage;
+        const v = targetVillage || engine.getCurrentVillage();
+
+        if (!v) return false;
+        if (!v.techs) v.techs = {};
+
+        // 2. Data Setup
+        const curLvl = v.techs[u] || 1;
+        const maxLvl = (DB.units[u] && DB.units[u].maxLevel) ? DB.units[u].maxLevel : 3;
+
+        // 3. Checks
+        if (curLvl >= maxLvl) {
+            if (!isMassAction) alert(T('maxLevel'));
+            return false;
+        }
+
         const rc = DB.units[u].cost.map(x => Math.floor(x * curLvl * 10));
-        if (v.res[0] < rc[0] || v.res[1] < rc[1] || v.res[2] < rc[2]) { alert(T('resLimit')); return; }
-        if (v.buildings["Smithy"] <= 0) { alert("Build Smithy!"); return; }
+
+        if (v.res[0] < rc[0] || v.res[1] < rc[1] || v.res[2] < rc[2]) {
+            if (!isMassAction) alert(T('resLimit'));
+            return false;
+        }
+
+        if ((v.buildings["Smithy"] || 0) <= 0) {
+            if (!isMassAction) alert("Build Smithy!");
+            return false;
+        }
+
+        // Initialize queue if missing
+        if (!v.queues.research) v.queues.research = [];
         const q = v.queues.research;
-        if (q.length > 0) { alert("Queue full"); return; }
-        v.res[0] -= rc[0]; v.res[1] -= rc[1]; v.res[2] -= rc[2];
+
+        if (q.length > 0) {
+            if (!isMassAction) alert("Queue full");
+            return false;
+        }
+
+        // 4. Execute
+        v.res[0] -= rc[0];
+        v.res[1] -= rc[1];
+        v.res[2] -= rc[2];
+
         const baseTime = DB.units[u].time * 10;
         const reduction = Math.pow(0.9, v.buildings["Smithy"]);
         const duration = Math.floor(baseTime * reduction * 1000);
+
         const lastFinish = q.length > 0 ? q[q.length - 1].finish : Date.now();
-        q.push({ unit: u, level: curLvl + 1, duration: duration, finish: lastFinish + duration });
-        ui.closeBuildingModal(); ui.refresh();
-        // CHANGED: Use soft save
+
+        q.push({
+            unit: u,
+            level: curLvl + 1,
+            duration: duration,
+            finish: lastFinish + duration
+        });
+
+        // 5. UI Updates (Only if NOT Mass Action)
+        if (!isMassAction) {
+            if (typeof ui.closeBuildingModal === 'function') ui.closeBuildingModal();
+            if (typeof ui.refresh === 'function') ui.refresh();
+        }
+
+        // Always save
         requestAutoSave();
+        return true; // SUCCESS
     },
     moveMap: function (dx, dy) { state.mapView.x += dx; state.mapView.y += dy; ui.renderMap(); },
     launchAttack: function (type) {

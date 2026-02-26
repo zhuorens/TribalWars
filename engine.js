@@ -244,8 +244,7 @@ const engine = {
         // Helper for random numbers
         const r = engine.rand;
 
-        if (owner === "enemy") {
-            // --- ENEMY LOGIC (Stronger) ---
+        if (owner !== "player" && owner !== "barbarian") {
             builds["Wall"] = r(1, 3);
             builds["Barracks"] = r(1, 5);
             builds["Headquarters"] = r(2, 10);
@@ -313,7 +312,7 @@ const engine = {
         for (let x = cX - 7; x <= cX + 7; x++) {
             for (let y = cY - 7; y <= cY + 7; y++) {
                 // Bounds check
-                if (x < 0 || x > CONFIG.mapSize || y < 0 || y > CONFIG.mapSize) continue;
+                if (x < 0 || x >= CONFIG.mapSize || y < 0 || y >= CONFIG.mapSize) continue;
                 // Already exists check
                 if (state.mapData[`${x},${y}`]) continue;
                 // Don't overwrite the player's start position (assuming 100,100)
@@ -589,14 +588,48 @@ const engine = {
 
                     if (targets.length > 0) {
                         const target = targets[Math.floor(Math.random() * targets.length)];
-                        const attScore = v.points * (0.8 + Math.random());
-                        const wallBonus = 1 + ((target.buildings["Wall"] || 0) * 0.02);
 
+                        // --- NEW LOGIC: FACTION STRENGTH RATIO ---
+
+                        // 1. Helper to sum points for an entire owner
+                        const getEmpirePoints = (ownerName) => {
+                            return state.villages
+                                .filter(vil => vil.owner === ownerName)
+                                .reduce((sum, vil) => sum + vil.points, 0);
+                        };
+
+                        const attTotal = getEmpirePoints(v.owner);
+
+                        // 2. Define Defender Strength
+                        // If Barbarian, they fight alone (strength = just this village).
+                        // If AI Warlord, they rely on their whole empire's strength.
+                        let defTotal = target.points;
+                        if (target.owner !== 'barbarian') {
+                            defTotal = getEmpirePoints(target.owner);
+                        }
+
+                        // 3. Calculate Ratio & Modifier
+                        // Ratio = AttackerTotal / DefenderTotal
+                        const ratio = attTotal / Math.max(1, defTotal);
+
+                        // Apply a curve (Power 0.3) so massive empires don't instantly win 100% of the time, 
+                        // but have a heavy advantage.
+                        // Ratio 1.0 (Equal) -> 1.0 multiplier
+                        // Ratio 2.0 (2x size) -> 1.23 multiplier
+                        // Ratio 10.0 (10x size) -> 2.0 multiplier
+                        const powerMod = Math.pow(ratio, 0.3);
+
+                        // 4. Calculate Scores
+                        const attScore = v.points * (0.8 + Math.random()) * powerMod;
+                        const wallBonus = 1 + ((target.buildings["Wall"] || 0) * 0.03);
+
+                        // 5. Resolution
                         if (attScore > target.points * wallBonus) {
                             target.owner = v.owner;
                             target.loyalty = 25;
                             target.buildings["Wall"] = Math.max(0, (target.buildings["Wall"] || 0) - 2);
                             target.points = engine.calculatePoints(target);
+
                             if (state.mapData[`${target.x},${target.y}`]) {
                                 state.mapData[`${target.x},${target.y}`].type = 'enemy';
                                 state.mapData[`${target.x},${target.y}`].points = target.points;
@@ -907,7 +940,7 @@ const engine = {
         if (result.win && m.units["Noble"] > 0) {
             const nobleCount = m.units["Noble"];
             let drop = 0;
-            for (let i = 0; i < nobleCount; i++) drop += Math.floor(22 + Math.random() * 14);
+            for (let i = 0; i < nobleCount; i++) drop += Math.floor(23 + Math.random() * 13);
             target.loyalty -= drop;
             loyaltyMsg = `<div style="color:blue"><b>${T('loyalty')} ${Math.floor(target.loyalty)}!</b> (-${drop})</div>`;
 
@@ -1140,7 +1173,7 @@ const engine = {
 
         // 2. Find a source (Enemy village nearby)
         const potentialSources = state.villages.filter(v => {
-            if (v.owner !== 'enemy') return false;
+            if (!v.owner.startsWith('ai_')) return false;
             const dist = Math.sqrt(Math.pow(v.x - target.x, 2) + Math.pow(v.y - target.y, 2));
             return dist <= CONFIG.aiAttackRange;
         });

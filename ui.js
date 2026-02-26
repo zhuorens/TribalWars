@@ -766,6 +766,25 @@ const ui = {
     },
 
     openBuildingModal: function (bName) {
+        const modal = document.getElementById('building-modal');
+        if (!modal) return;
+
+        // --- 1. RESET MODAL STRUCTURE (Fixes the crash) ---
+        // We restore the standard building modal layout before trying to fill it with data.
+        modal.innerHTML = `
+            <div class="modal-content" style="width:600px; background:white; padding:20px; border-radius:8px; box-shadow:0 4px 15px rgba(0,0,0,0.3);">
+                <span class="close" onclick="ui.closeBuildingModal()" style="float:right; cursor:pointer; font-size:20px;">&times;</span>
+                
+                <h2 id="b-modal-title" style="margin-top:0;"></h2>
+                <p id="b-modal-desc" style="color:#666; font-style:italic; margin-bottom:15px; font-size:12px;"></p>
+                
+                <div id="b-modal-cost"></div>
+                
+                <button id="b-modal-btn" class="btn" style="width:100%; padding:10px; font-weight:bold; margin-top:10px; display:none;"></button>
+            </div>
+        `;
+
+        // --- 2. YOUR ORIGINAL LOGIC STARTS HERE ---
         ui.selBuild = bName;
         const v = engine.getCurrentVillage();
         const d = DB.buildings[bName];
@@ -775,7 +794,6 @@ const ui = {
         const popAvail = engine.getPopLimit(v) - engine.getPopUsed(v);
 
         // Helper: Calculate Pop Required for Next Level
-        // Logic: (Total Pop at Next Level) - (Total Pop at Current Level)
         const getPopNeeded = (virtualLvl) => {
             const nextTotal = engine.getBuildingPop(bName, virtualLvl);
             const currentTotal = engine.getBuildingPop(bName, virtualLvl - 1);
@@ -787,7 +805,7 @@ const ui = {
             document.getElementById('b-modal-title').innerText = T_Name("Smithy");
             document.getElementById('b-modal-desc').innerText = d.desc;
 
-            // 1. Render Unit Research List (Unchanged logic, kept for completeness)
+            // 1. Render Unit Research List
             let html = "<div style='display:grid; grid-template-columns: 1fr 1fr; gap:5px; max-height:200px; overflow-y:auto; margin-bottom:10px;'>";
             for (let u in DB.units) {
                 if (u === "Catapult" && !CONFIG.enableCatapults) continue;
@@ -802,8 +820,8 @@ const ui = {
                     const rc = DB.units[u].cost.map(x => Math.floor(x * curLvl * 10));
                     const baseTime = DB.units[u].time * 200;
                     const rTime = Math.floor(baseTime * Math.pow(0.9, v.buildings[bName]) * 1000);
-                    // Research doesn't cost population, so no check here
-                    html += `<div style="background:#eee; padding:5px; font-size:12px; border:1px solid #ccc;"><b>${T_Name(u)}</b><br>Next: Lv${nextLvl}<br>🌲${rc[0]} 🧱${rc[1]} 🔩${rc[2]}<br>⏳ ${formatTime(rTime)}<br><button class="btn" style="padding:2px 5px; font-size:10px; width:100%" onclick="game.research('${u}')">${T('upgrade')}</button></div>`;
+
+                    html += `<div style="background:#f9f9f9; padding:5px; font-size:12px; border:1px solid #ccc;"><b>${T_Name(u)}</b><br>Next: Lv${nextLvl}<br>🌲${rc[0]} 🧱${rc[1]} 🔩${rc[2]}<br>⏳ ${formatTime(rTime)}<br><button class="btn" style="padding:2px 5px; font-size:10px; width:100%; margin-top:3px;" onclick="game.research('${u}')">${T('upgrade')}</button></div>`;
                 }
             }
             html += "</div>";
@@ -827,8 +845,7 @@ const ui = {
                     Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
                 ];
 
-                // --- NEW: Calculate Pop for Smithy Upgrade ---
-                const popNeeded = getPopNeeded(virtualLvl);
+                const popNeeded = getPopNeeded(virtualLvl + 1); // Fix: pass next level
 
                 const hqLvl = v.buildings["Headquarters"] || 1;
                 const speedMod = Math.pow(0.95, hqLvl);
@@ -862,7 +879,7 @@ const ui = {
 
                         const isQueueFull = v.queues.build.length >= CONFIG.buildQueueLimit;
                         const canAfford = v.res[0] >= c[0] && v.res[1] >= c[1] && v.res[2] >= c[2];
-                        const hasPop = popAvail >= popNeeded; // Smithy needs pop
+                        const hasPop = popAvail >= popNeeded;
 
                         if (isQueueFull) {
                             btn.innerText = T('queue_full');
@@ -876,7 +893,6 @@ const ui = {
                     }
                 }, 0);
             }
-
             document.getElementById('building-modal').style.display = 'flex';
             return;
         }
@@ -909,8 +925,7 @@ const ui = {
                 Math.floor(d.base[2] * Math.pow(d.factor, virtualLvl))
             ];
 
-            // --- NEW: Calculate Pop for Standard Upgrade ---
-            const popNeeded = getPopNeeded(virtualLvl);
+            const popNeeded = getPopNeeded(virtualLvl + 1); // Fix: pass next level
 
             const hqLvl = v.buildings["Headquarters"] || 1;
             const speedMod = Math.pow(0.95, hqLvl);
@@ -921,10 +936,13 @@ const ui = {
                 queueStatus = `<div style="color:blue; font-size:11px; margin-bottom:5px;">${T('check_queue').replace('%s', queuedCount)}</div>`;
             }
 
-            // Added Pop Icon and Value to Display
+            // Standard Cost Display
             document.getElementById('b-modal-cost').innerHTML = `
             ${queueStatus}
-            ${T('cost')}: 🌲${c[0]} 🧱${c[1]} 🔩${c[2]} 👥${popNeeded} | ⏳ ${formatTime(tSeconds * 1000)}
+            <div style="background:#f9f9f9; padding:10px; border-radius:5px; border:1px solid #eee;">
+                ${T('cost')}: 🌲${c[0]} 🧱${c[1]} 🔩${c[2]} 👥${popNeeded} <br>
+                ⏳ ${formatTime(tSeconds * 1000)}
+            </div>
         `;
 
             const btn = document.getElementById('b-modal-btn');
@@ -939,15 +957,13 @@ const ui = {
             const ignorePop = (bName === "Farm" || bName === "Warehouse");
             const hasPop = ignorePop || (popAvail >= popNeeded);
 
-            // Combined logic for disabling button
             if (isQueueFull) {
                 btn.innerText = T('queue_full');
                 btn.disabled = true;
             } else if (!canAfford) {
                 btn.disabled = true;
-                // Optional: btn.innerText = "No Res";
             } else if (!hasPop) {
-                btn.innerText = "No Pop"; // Distinct feedback
+                btn.innerText = "No Pop";
                 btn.disabled = true;
             } else {
                 btn.disabled = false;
@@ -1290,17 +1306,52 @@ const ui = {
     },
 
     // Add to your ui object
-    renderRankingTab: function () {
+    renderRankingTab: function (filterTab = ui.currentRankingTab || 'global') {
+        ui.currentRankingTab = filterTab;
         const container = document.getElementById('ranking-list');
         if (!container) return;
 
-        // 1. Calculate Scores
+        // --- 1. DETERMINE CONTINENTS (200x200 Map -> 50x50 Continents = 4x4 Grid) ---
+        const activeContinents = new Set();
+        let playerMainContinent = null;
+        let playerMaxVils = 0;
+        const playerContCounts = {};
+
+        // Helper to safely calculate continent (K00 - K33)
+        const getContinent = (x, y) => {
+            const cX = Math.min(3, Math.floor(x / 50));
+            const cY = Math.min(3, Math.floor(y / 50));
+            return `K${cY}${cX}`;
+        };
+
+        // Find all active continents and figure out where the player is most active
+        state.villages.forEach(v => {
+            const kName = getContinent(v.x, v.y);
+            activeContinents.add(kName);
+
+            if (v.owner === 'player') {
+                playerContCounts[kName] = (playerContCounts[kName] || 0) + 1;
+                if (playerContCounts[kName] > playerMaxVils) {
+                    playerMaxVils = playerContCounts[kName];
+                    playerMainContinent = kName;
+                }
+            }
+        });
+
+        // Resolve "continent" alias if passed dynamically
+        if (filterTab === 'continent') {
+            filterTab = playerMainContinent || Array.from(activeContinents).sort()[0] || 'global';
+            ui.currentRankingTab = filterTab;
+        }
+
+        const isGlobal = filterTab === 'global';
+
+        // --- 2. CALCULATE SCORES ---
         const scores = [];
         const profiles = state.playerProfiles || {};
 
-        // Initialize scores for all known profiles (except Barbarians usually)
         for (let id in profiles) {
-            if (id === 'barbarian') continue; // Skip barbs in ranking
+            if (id === 'barbarian') continue;
             scores.push({
                 id: id,
                 name: profiles[id].name,
@@ -1311,9 +1362,16 @@ const ui = {
             });
         }
 
-        // Sum up points from the map
+        // Sum up points based on the current filter
         state.villages.forEach(v => {
             const owner = v.owner || 'barbarian';
+            if (owner === 'barbarian') return;
+
+            const kName = getContinent(v.x, v.y);
+
+            // Skip villages outside of the selected continent
+            if (!isGlobal && filterTab !== kName) return;
+
             const entry = scores.find(s => s.id === owner);
             if (entry) {
                 entry.points += (v.points || 0);
@@ -1321,57 +1379,107 @@ const ui = {
             }
         });
 
-        scores.forEach(s => {
-            if (s.id !== 'player' && s.alive && s.villages === 0) {
-                s.alive = false;
-                if (state.playerProfiles[s.id]) state.playerProfiles[s.id].alive = false; // Update state too
-            }
+        // Filter out players who have 0 villages in THIS specific view
+        const displayScores = scores.filter(s => s.villages > 0 || (isGlobal && s.alive && s.id === 'player'));
+
+        // Handle Global Death logic ONLY on the global tab
+        if (isGlobal) {
+            scores.forEach(s => {
+                if (s.id !== 'player' && s.alive && s.villages === 0) {
+                    s.alive = false;
+                    if (state.playerProfiles[s.id]) state.playerProfiles[s.id].alive = false;
+                }
+            });
+        }
+
+        // --- 3. SORT ---
+        displayScores.sort((a, b) => {
+            if (a.alive !== b.alive) return b.alive ? 1 : -1;
+            return b.points - a.points;
         });
 
-        // 2. Sort: Active Players > Points > Villages
-        scores.sort((a, b) => {
-            if (a.alive !== b.alive) return b.alive ? 1 : -1; // Dead players at bottom
-            return b.points - a.points; // High score top
-        });
-
-        // 3. Build HTML Table
+        // --- 4. BUILD HTML UI ---
+        
+        // Top Bar: Global Button
         let html = `
-    <div style="padding:10px; font-weight:bold; font-size:14px; border-bottom:1px solid #ccc;">
-        🏆 World Leaderboard
-    </div>
-    <table class="rank-table">
-        <thead>
-            <tr>
-                <th style="width:10%">#</th>
-                <th style="width:40%">Name</th>
-                <th style="width:15%">Vil</th>
-                <th style="width:35%">Points</th>
-            </tr>
-        </thead>
-        <tbody>
-    `;
+            <div style="padding:10px; background:#f0f0f0; text-align:center; border-bottom:1px solid #ccc;">
+                <button onclick="ui.renderRankingTab('global')" 
+                    style="width:100%; padding:10px; border-radius:4px; font-weight:bold; font-size:14px; cursor:pointer; 
+                    background:${isGlobal ? '#2196F3' : '#fff'}; 
+                    color:${isGlobal ? '#fff' : '#333'}; 
+                    border:${isGlobal ? '1px solid #1976d2' : '1px solid #ccc'};">
+                    🌍 Global Leaderboard
+                </button>
+            </div>
+        `;
 
-        scores.forEach((s, index) => {
+        // Interactive 4x4 Mini-Map Grid
+        html += `
+            <div style="padding:10px; background:#e8e8e8; border-bottom:1px solid #ccc;">
+                <div style="font-size:11px; color:#555; text-align:center; margin-bottom:5px; font-weight:bold;">
+                    🗺️ Select Map Continent:
+                </div>
+                <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:4px; max-width: 300px; margin: 0 auto;">
+        `;
+
+        // Render the 4x4 grid dynamically
+        for (let y = 0; y <= 3; y++) {
+            for (let x = 0; x <= 3; x++) {
+                const k = `K${y}${x}`;
+                const isSelected = filterTab === k;
+                const hasVillages = activeContinents.has(k);
+                
+                // Styling based on state
+                let bg = isSelected ? '#2196F3' : (hasVillages ? '#fff' : '#d5d5d5');
+                let color = isSelected ? '#fff' : (hasVillages ? '#333' : '#888');
+                let border = isSelected ? '1px solid #1976d2' : '1px solid #bbb';
+                let cursor = hasVillages || isSelected ? 'cursor:pointer;' : 'cursor:not-allowed; opacity: 0.6;';
+
+                html += `
+                    <button onclick="ui.renderRankingTab('${k}')" title="${hasVillages ? 'View ' + k : 'No players in ' + k}"
+                        style="padding:8px 0; background:${bg}; color:${color}; border:${border}; border-radius:3px; font-size:12px; font-weight:bold; ${cursor}">
+                        ${k}
+                    </button>
+                `;
+            }
+        }
+        
+        html += `</div></div>`; // Close grid and wrapper
+
+        // --- 5. RENDER TABLE ---
+        html += `
+        <table class="rank-table" style="width:100%; text-align:left; border-collapse:collapse; margin-top:0;">
+            <thead>
+                <tr style="background:#ddd;">
+                    <th style="padding:8px; width:10%">#</th>
+                    <th style="padding:8px; width:40%">Name</th>
+                    <th style="padding:8px; width:15%">Vil</th>
+                    <th style="padding:8px; width:35%">Points</th>
+                </tr>
+            </thead>
+            <tbody>
+        `;
+
+        displayScores.forEach((s, index) => {
             const isMe = s.id === 'player';
-            let rowClass = "rank-row-clickable "; // Add clickable class
+            let rowClass = "rank-row-clickable ";
             if (isMe) rowClass += "rank-row-player";
             else if (!s.alive) rowClass += "rank-row-dead";
 
-            const dot = `<span class="rank-dot" style="background:${s.color}"></span>`;
+            const dot = `<span class="rank-dot" style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${s.color}; margin-right:5px; border:1px solid rgba(0,0,0,0.2);"></span>`;
             const nameDisplay = isMe ? `${dot} ${s.name} (You)` : `${dot} ${s.name}`;
 
-            // ADD ONCLICK HERE:
             html += `
-        <tr class="${rowClass}" onclick="ui.showPlayerVillages('${s.id}')">
-            <td>${index + 1}</td>
-            <td>${nameDisplay}</td>
-            <td>${s.villages}</td>
-            <td>${s.points.toLocaleString()}</td>
-        </tr>`;
+            <tr class="${rowClass}" onclick="ui.showPlayerVillages('${s.id}')">
+                <td style="padding:8px;">${index + 1}</td>
+                <td style="padding:8px;">${nameDisplay}</td>
+                <td style="padding:8px;">${s.villages}</td>
+                <td style="padding:8px;">${s.points.toLocaleString()}</td>
+            </tr>`;
         });
 
-        if (scores.length === 0) {
-            html += `<tr><td colspan="4" style="text-align:center; padding:20px;">No players found.</td></tr>`;
+        if (displayScores.length === 0) {
+            html += `<tr><td colspan="4" style="text-align:center; padding:30px; color:#777; font-style:italic;">No player presence detected here.</td></tr>`;
         }
 
         html += `</tbody></table>`;
@@ -1385,48 +1493,76 @@ const ui = {
     closeReportModal: () => document.getElementById('report-modal').style.display = 'none',
 
     openMarketModal: function (targetId) {
-        const v = engine.getCurrentVillage();
-        const tId = Number(targetId);
-        const targetV = state.villages.find(vil => vil.id === tId);
+        const modal = document.getElementById('building-modal');
+        if (!modal) return;
 
-        // Safety debug: If this logs "Target not found", you know the ID is still wrong
-        if (!targetV) {
-            console.error("Market Target not found:", targetId);
-            return;
-        }
-        const marketLvl = v.buildings["Market"] || 0;
-        const maxCap = marketLvl * CONFIG.marketCapacityPerLevel;
-        if (!targetV) return;
-
-        let html = `
-            <div style="padding:10px;">
-                <div style="margin-bottom:10px; background:#e0f7fa; padding:5px; border:1px solid #00acc1;">
-                    <b>${T('target')}:</b> ${targetV.name} (${targetV.x}|${targetV.y})<br>
-                    <b>${T('capacity')}:</b> ${maxCap}
-                </div>
-                <input type="hidden" id="market-target-id" value="${targetId}">
-                <div style="display:grid; grid-template-columns: 30px 1fr 50px; gap:5px; align-items:center; margin-bottom:5px;">
-                    <span>🌲</span> 
-                    <input type="number" id="market-wood" value="0" max="${Math.floor(v.res[0])}" style="width:100%">
-                    <button class="btn-mini" onclick="ui.setMaxMarket('wood')">${T('max')}</button>
-
-                    <span>🧱</span> 
-                    <input type="number" id="market-clay" value="0" max="${Math.floor(v.res[1])}" style="width:100%">
-                    <button class="btn-mini" onclick="ui.setMaxMarket('clay')">${T('max')}</button>
-
-                    <span>🔩</span> 
-                    <input type="number" id="market-iron" value="0" max="${Math.floor(v.res[2])}" style="width:100%">
-                    <button class="btn-mini" onclick="ui.setMaxMarket('iron')">${T('max')}</button>
-                </div>
-                <button class="btn btn-blue" style="width:100%; margin-top:15px;" onclick="game.sendResources()">${T('confirm_transport')}</button>
+        // --- 1. RESET MODAL STRUCTURE ---
+        modal.innerHTML = `
+            <div class="modal-content" style="width:600px; background:white; padding:20px; border-radius:8px; box-shadow:0 4px 15px rgba(0,0,0,0.3);">
+                <span class="close" onclick="ui.closeBuildingModal()" style="float:right; cursor:pointer; font-size:20px;">&times;</span>
+                <h3 id="market-title" style="margin-top:0;">Market</h3>
+                <div id="market-content"></div>
             </div>
         `;
 
-        document.getElementById('b-modal-title').innerText = `${T_Name('Market')} (Lv ${marketLvl})`;
-        document.getElementById('b-modal-desc').innerText = T('transport');
-        document.getElementById('b-modal-cost').innerHTML = html;
-        document.getElementById('b-modal-btn').style.display = 'none';
-        document.getElementById('building-modal').style.display = 'flex';
+        // --- 2. DATA SETUP ---
+        const v = engine.getCurrentVillage();
+
+        // Handle ID type safety (string vs number)
+        const tId = Number(targetId);
+        const targetV = state.villages.find(vil => vil.id === tId);
+
+        if (!targetV) {
+            console.error("Market Target not found:", targetId);
+            ui.showToast("Target village not found", "error");
+            return;
+        }
+
+        const marketLvl = v.buildings["Market"] || 0;
+        // Safety check for CONFIG
+        const capacityPerLvl = (typeof CONFIG !== 'undefined' && CONFIG.marketCapacityPerLevel) ? CONFIG.marketCapacityPerLevel : 1000;
+        const maxCap = marketLvl * capacityPerLvl;
+
+        // --- 3. RENDER CONTENT ---
+        // Update Title
+        document.getElementById('market-title').innerText = `${T_Name('Market')} (Lv ${marketLvl})`;
+
+        // Render Form
+        const html = `
+            <div style="padding:5px;">
+                <input type="hidden" id="market-target-id" value="${tId}">
+
+                <div style="margin-bottom:15px; background:#e0f7fa; padding:10px; border-radius:4px; border:1px solid #00acc1; font-size:12px;">
+                    <div style="font-weight:bold; margin-bottom:3px;">🚩 ${T('target')}: ${targetV.name} (${targetV.x}|${targetV.y})</div>
+                    <div>📦 ${T('capacity')}: <b>${maxCap}</b></div>
+                </div>
+
+                <div style="display:grid; grid-template-columns: 30px 1fr 60px; gap:8px; align-items:center; margin-bottom:15px;">
+                    <span style="font-size:18px;">🌲</span> 
+                    <input type="number" id="market-wood" value="0" min="0" max="${Math.floor(v.res[0])}" style="padding:5px; border:1px solid #ccc; width:100%;">
+                    <button class="btn-mini" onclick="ui.setMaxMarket('wood')" style="padding:5px;">Max</button>
+
+                    <span style="font-size:18px;">🧱</span> 
+                    <input type="number" id="market-clay" value="0" min="0" max="${Math.floor(v.res[1])}" style="padding:5px; border:1px solid #ccc; width:100%;">
+                    <button class="btn-mini" onclick="ui.setMaxMarket('clay')" style="padding:5px;">Max</button>
+
+                    <span style="font-size:18px;">🔩</span> 
+                    <input type="number" id="market-iron" value="0" min="0" max="${Math.floor(v.res[2])}" style="padding:5px; border:1px solid #ccc; width:100%;">
+                    <button class="btn-mini" onclick="ui.setMaxMarket('iron')" style="padding:5px;">Max</button>
+                </div>
+
+                <div style="text-align:right; margin-bottom:10px; font-size:11px; color:#666;">
+                    Available: 🌲${Math.floor(v.res[0])} 🧱${Math.floor(v.res[1])} 🔩${Math.floor(v.res[2])}
+                </div>
+
+                <button class="btn btn-green" style="width:100%; padding:10px; font-weight:bold;" onclick="game.sendResources('${tId}')">
+                    🚚 ${T('confirm_transport')}
+                </button>
+            </div>
+        `;
+
+        document.getElementById('market-content').innerHTML = html;
+        modal.style.display = 'flex';
     },
 
     setMaxMarket: function (type) {
@@ -1910,14 +2046,32 @@ const ui = {
             </div>
             
             <div style="display:flex; border-bottom:1px solid #ddd; background:#f9f9f9;">
-                <button class="tab-btn active" onclick="ui.switchMassTab('recruit', this)" style="flex:1; padding:10px; border:none; cursor:pointer; background:none; font-weight:bold; color:#555; border-bottom:3px solid transparent;">⚔️ Recruit</button>
+                <button class="tab-btn active" onclick="ui.switchMassTab('research', this)" style="flex:1; padding:10px; border:none; cursor:pointer; background:none; font-weight:bold; color:#555; border-bottom:3px solid transparent;">🧪 Research</button>
                 <button class="tab-btn" onclick="ui.switchMassTab('build', this)" style="flex:1; padding:10px; border:none; cursor:pointer; background:none; font-weight:bold; color:#555; border-bottom:3px solid transparent;">🏗️ Build</button>
-                <button class="tab-btn" onclick="ui.switchMassTab('research', this)" style="flex:1; padding:10px; border:none; cursor:pointer; background:none; font-weight:bold; color:#555; border-bottom:3px solid transparent;">🧪 Research</button>
+                <button class="tab-btn" onclick="ui.switchMassTab('recruit', this)" style="flex:1; padding:10px; border:none; cursor:pointer; background:none; font-weight:bold; color:#555; border-bottom:3px solid transparent;">⚔️ Recruit</button>
             </div>
 
             <div style="padding:20px;">
 
-                <div id="mass-tab-recruit" style="display:block;">
+                <div id="mass-tab-research" style="display:block;">
+                     <div style="background:#fff3e0; padding:15px; border-radius:4px; margin-bottom:15px; border:1px solid #ffe0b2;">
+                        <b>🧪 Auto-Research</b><br>
+                    </div>
+                    <button class="btn btn-purple" style="width:100%; padding:10px;" onclick="ui.massResearchSmart()">
+                        🧪 Run Mass Research
+                    </button>
+                </div>
+
+                <div id="mass-tab-build" style="display:none;">
+                    <div style="background:#e3f2fd; padding:15px; border-radius:4px; margin-bottom:15px; border:1px solid #bbdefb;">
+                        <b>🏗️ Smart Infrastructure</b><br>
+                    </div>
+                    <button class="btn btn-blue" style="width:100%; padding:10px;" onclick="ui.massBuildSmart()">
+                        🏗️ Run Smart Build
+                    </button>
+                </div>
+
+                <div id="mass-tab-recruit" style="display:none;">
                     <p style="font-size:12px; color:#666; margin-bottom:15px;">
                         Train troops based on your templates. 
                         <br><i>Priority: Nobles > Remaining Resources divided fairly.</i>
@@ -1931,24 +2085,6 @@ const ui = {
                     </div>
 
                     <div id="tab-content-templates" style="display:none; margin-top:15px;"></div>
-                </div>
-
-                <div id="mass-tab-build" style="display:none;">
-                    <div style="background:#e3f2fd; padding:15px; border-radius:4px; margin-bottom:15px; border:1px solid #bbdefb;">
-                        <b>🏗️ Smart Infrastructure</b><br>
-                    </div>
-                    <button class="btn btn-blue" style="width:100%; padding:10px;" onclick="ui.massBuildSmart()">
-                        🏗️ Run Smart Build
-                    </button>
-                </div>
-
-                <div id="mass-tab-research" style="display:none;">
-                     <div style="background:#fff3e0; padding:15px; border-radius:4px; margin-bottom:15px; border:1px solid #ffe0b2;">
-                        <b>🧪 Auto-Research</b><br>
-                    </div>
-                    <button class="btn btn-purple" style="width:100%; padding:10px;" onclick="ui.massResearchSmart()">
-                        🧪 Run Mass Research
-                    </button>
                 </div>
 
             </div> </div>`;
@@ -1978,7 +2114,7 @@ const ui = {
 
         // Initialize first tab state visually
         const firstBtn = modal.querySelector('.tab-btn');
-        if (firstBtn) ui.switchMassTab('recruit', firstBtn);
+        if (firstBtn) ui.switchMassTab('research', firstBtn);
     },
 
     // --- TEMPLATE EDITOR TOGGLE ---
@@ -2089,23 +2225,40 @@ const ui = {
 
                 let trainedHere = false;
 
-                // --- PHASE 1: NOBLE PRIORITY ---
-                // We handle Nobles exclusively first. They eat resources before anyone else.
-                if (template["Noble"]) {
-                    const target = template["Noble"];
+                const getTrueUnitCount = (uName) => {
+                    let manualCount = v.units[uName] || 0;
 
-                    // Safe Count
-                    let totalOwned = 0;
+                    // 1. Add units currently waiting in queues
+                    const queues = ['barracks', 'stable', 'workshop', 'academy'];
+                    queues.forEach(qName => {
+                        if (v.queues[qName]) {
+                            v.queues[qName].forEach(q => {
+                                if (q.unit === uName) {
+                                    // Handle varying property names (amount/count) depending on the engine
+                                    manualCount += (q.amount || q.count || 1);
+                                }
+                            });
+                        }
+                    });
+
+                    // 2. Check engine's total (which might include troops stationed outside the village)
+                    let engineCount = 0;
                     if (typeof engine.getUnitCountTotal === 'function') {
-                        totalOwned = engine.getUnitCountTotal(v, "Noble");
-                    } else {
-                        totalOwned = v.units["Noble"] || 0;
+                        engineCount = engine.getUnitCountTotal(v, uName);
                     }
 
+                    // 3. Return whichever is larger. This prevents double-counting while ensuring 
+                    // we don't miss queues (if engine fails) or external troops (if manual fails).
+                    return Math.max(manualCount, engineCount);
+                };
+
+                // --- PHASE 1: NOBLE PRIORITY ---
+                if (template["Noble"]) {
+                    const target = template["Noble"];
+                    const totalOwned = getTrueUnitCount("Noble");
                     const missing = target - totalOwned;
 
                     if (missing > 0) {
-                        // Calculate Affordability specifically for Noble
                         const d = DB.units["Noble"];
                         const maxW = Math.floor(v.res[0] / d.cost[0]);
                         const maxC = Math.floor(v.res[1] / d.cost[1]);
@@ -2117,7 +2270,6 @@ const ui = {
                         const toTrain = Math.min(missing, maxW, maxC, maxI, maxP);
 
                         if (toTrain > 0) {
-                            // Recruit immediately. This updates v.res and v.popUsed instantly.
                             game.processRecruit("Noble", toTrain, v, true);
                             totalQueued += toTrain;
                             trainedHere = true;
@@ -2126,8 +2278,6 @@ const ui = {
                 }
 
                 // --- PHASE 2: BALANCED FILL (Everything Else) ---
-                // Now we look at what resources are LEFT and balance the remaining troops
-
                 const needs = {};
                 let totalCost = [0, 0, 0];
                 let totalPopNeeded = 0;
@@ -2139,13 +2289,8 @@ const ui = {
                     const target = template[unit];
                     if (target <= 0) continue;
 
-                    let totalOwned = 0;
-                    if (typeof engine.getUnitCountTotal === 'function') {
-                        totalOwned = engine.getUnitCountTotal(v, unit);
-                    } else {
-                        totalOwned = v.units[unit] || 0;
-                    }
-
+                    // Use the new robust counter
+                    const totalOwned = getTrueUnitCount(unit);
                     const missing = target - totalOwned;
 
                     if (missing > 0) {
@@ -2204,120 +2349,158 @@ const ui = {
         ui.renderOverview();
         requestAutoSave();
     },
-    // --- MASS BUILDING LOGIC ---
     massBuildSmart: function () {
-        let count = 0;
+        let totalBuilds = 0;
 
         // --- CONFIGURATION ---
-        // Use global CONFIG or default to 2 if undefined
         const QUEUE_LIMIT = (typeof CONFIG !== 'undefined' && CONFIG.buildQueueLimit) ? CONFIG.buildQueueLimit : 2;
+        const SAFE_BUFFER = 1.5;   // Infra requires 1.5x cost
+        const GREEDY_BUFFER = 1.0; // Mines use 1.0x cost
 
-        const SAFE_BUFFER = 1.5;   // Infra requires 1.5x cost (save for troops)
-        const GREEDY_BUFFER = 1.0; // Mines use 1.0x cost (spend everything)
-        const MAX_RES_LEVEL = 30;  // Max level for Mines
-
-        // Prioritized Infrastructure (Built only after Economy is maxed)
-        const infraOrder = [
-            { name: "Headquarters", max: 30 },
-            { name: "Wall", max: 20 },
-            { name: "Barracks", max: 25 },
-            { name: "Stable", max: 20 },
-            { name: "Market", max: 25 },
-            { name: "Smithy", max: 10 }, // UPDATED: Max 10
-            { name: "Academy", max: 1 }
+        const infraPriority = [
+            "Headquarters", "Wall", "Barracks", "Stable", "Workshop", "Market", "Smithy", "Academy"
         ];
 
         state.villages.forEach(v => {
             if (v.owner !== 'player') return;
 
-            // 1. Queue Check (Dynamic Limit)
-            if (v.queues.build.length >= QUEUE_LIMIT) return;
+            // TRACKING VIRTUAL STATE
+            // We use these to simulate the state "after" the queued buildings finish
+            let virtualRes = [...v.res];
+            let virtualPopUsed = engine.getPopUsed(v);
+            const popLimit = engine.getPopLimit(v);
 
-            // 2. Helpers
-            const getLvl = (name) => v.buildings[name] || 0;
+            // --- HELPERS ---
 
-            // Affordability Check
-            const canAfford = (bName, buffer) => {
-                if (!DB.buildings[bName]) return false;
-                // Calculate cost for the NEXT level
-                const cost = DB.buildings[bName].cost.map(c => Math.floor(c * Math.pow(1.2, getLvl(bName))));
-
-                return v.res[0] >= cost[0] * buffer &&
-                    v.res[1] >= cost[1] * buffer &&
-                    v.res[2] >= cost[2] * buffer;
+            // CRITICAL FIX: Get Effective Level (Buildings owned + Buildings currently in queue)
+            const getEffectiveLvl = (name) => {
+                const queuedCount = v.queues.build.filter(q => q.building === name).length;
+                return (v.buildings[name] || 0) + queuedCount;
             };
 
-            let target = null;
-            let infraAllowed = false; // Default: Infra is locked
+            const getMax = (name) => (DB.buildings[name] && DB.buildings[name].maxLevel) ? DB.buildings[name].maxLevel : 30;
 
-            // --- PHASE 1: CRITICAL (Pop & Storage) ---
-            // Overrides everything. If we can't grow, we die.
-            const popPct = engine.getPopUsed(v) / engine.getPopLimit(v);
-            const storage = engine.getStorage(v);
-            const resPct = Math.max(v.res[0], v.res[1], v.res[2]) / storage;
+            // Calculate cost for the NEXT level (Effective Level)
+            const getNextCost = (bName, effectiveLvl) => {
+                const bData = DB.buildings[bName];
+                if (!bData) return null;
+                // Cost for Level X is usually Base * Factor^(X)
+                return bData.base.map(c => Math.floor(c * Math.pow(bData.factor, effectiveLvl)));
+            };
 
-            // 95% Pop -> Farm (if not maxed)
-            if (popPct > 0.95 && getLvl("Farm") < 30) {
-                if (canAfford("Farm", 1.0)) target = "Farm";
-            }
-            // 90% Storage -> Warehouse (if not maxed)
-            else if (resPct > 0.90 && getLvl("Warehouse") < 30) {
-                if (canAfford("Warehouse", 1.0)) target = "Warehouse";
-            }
+            // Calculate Pop increase for the NEXT level
+            const getNextPopCost = (bName, effectiveLvl) => {
+                // Use your engine's precise formula to get total pop at the new vs old level
+                const nextTotal = engine.getBuildingPop(bName, effectiveLvl + 1);
+                const currTotal = engine.getBuildingPop(bName, effectiveLvl);
 
-            // --- PHASE 2: STRICT ECONOMY (Mines First) ---
-            if (!target) {
-                const mines = [
-                    { name: "Timber Camp", lvl: getLvl("Timber Camp") },
-                    { name: "Clay Pit", lvl: getLvl("Clay Pit") },
-                    { name: "Iron Mine", lvl: getLvl("Iron Mine") }
-                ];
+                return Math.max(0, nextTotal - currTotal);
+            };
 
-                // Sort by level (ascending) -> always upgrade the lowest one
-                mines.sort((a, b) => a.lvl - b.lvl);
-                const lowestMine = mines[0];
+            const canAffordVirtual = (cost, buffer) => {
+                if (!cost) return false;
+                return virtualRes[0] >= cost[0] * buffer &&
+                    virtualRes[1] >= cost[1] * buffer &&
+                    virtualRes[2] >= cost[2] * buffer;
+            };
 
-                // Are mines maxed?
-                if (lowestMine.lvl < MAX_RES_LEVEL) {
-                    // MINES ARE NOT MAXED.
-                    // Attempt to build the mine.
-                    if (canAfford(lowestMine.name, GREEDY_BUFFER)) {
-                        target = lowestMine.name;
-                    }
-                    // STRICT LOCK:
-                    // If we can't afford the mine, we do NOTHING.
-                    // We DO NOT fail over to infrastructure. We save resources.
-                    infraAllowed = false;
-                } else {
-                    // All mines are Level 30. Unlock Infrastructure.
-                    infraAllowed = true;
+            // --- BUILD LOOP ---
+            // Run until queue is full. Note: We check v.queues.build.length dynamically.
+            while (v.queues.build.length < QUEUE_LIMIT) {
+                let target = null;
+                let targetCost = null;
+                let targetPop = 0;
+                let infraAllowed = false;
+
+                // Re-calc percentages based on VIRTUAL stats
+                const storage = engine.getStorage(v);
+                const popPct = virtualPopUsed / popLimit;
+                const resPct = Math.max(virtualRes[0], virtualRes[1], virtualRes[2]) / storage;
+
+                // 1. CRITICAL CHECKS
+                // Farm
+                const farmLvl = getEffectiveLvl("Farm");
+                if (!target && popPct > 0.95 && farmLvl < getMax("Farm")) {
+                    const c = getNextCost("Farm", farmLvl);
+                    if (canAffordVirtual(c, 1.0)) { target = "Farm"; targetCost = c; }
                 }
-            }
+                // Warehouse
+                const whLvl = getEffectiveLvl("Warehouse");
+                if (!target && resPct > 0.90 && whLvl < getMax("Warehouse")) {
+                    const c = getNextCost("Warehouse", whLvl);
+                    if (canAffordVirtual(c, 1.0)) { target = "Warehouse"; targetCost = c; }
+                }
 
-            // --- PHASE 3: SAFE INFRASTRUCTURE ---
-            // Only runs if Mines are Level 30 (or Critical passed).
-            if (!target && infraAllowed) {
-                for (let b of infraOrder) {
-                    const currentLvl = getLvl(b.name);
+                // 2. ECONOMY CHECKS (Lowest Mine First)
+                if (!target) {
+                    const mines = ["Timber Camp", "Clay Pit", "Iron Mine"];
+                    const status = mines.map(n => ({ name: n, lvl: getEffectiveLvl(n), max: getMax(n) }));
 
-                    if (DB.buildings[b.name] && currentLvl < b.max) {
-                        // Use SAFE_BUFFER (1.5x) to leave room for troops
-                        if (canAfford(b.name, SAFE_BUFFER)) {
-                            target = b.name;
-                            break; // Found our project
+                    status.sort((a, b) => a.lvl - b.lvl);
+                    const lowest = status[0];
+
+                    if (lowest.lvl < lowest.max) {
+                        const c = getNextCost(lowest.name, lowest.lvl);
+                        const p = getNextPopCost(lowest.name, lowest.lvl);
+
+                        if (canAffordVirtual(c, GREEDY_BUFFER) && (virtualPopUsed + p <= popLimit)) {
+                            target = lowest.name;
+                            targetCost = c;
+                            targetPop = p;
+                        } else {
+                            // Can't afford the next mine level? Stop here.
+                            break;
+                        }
+                        infraAllowed = false; // Block infra until mines are maxed
+                    } else {
+                        infraAllowed = true; // All mines maxed
+                    }
+                }
+
+                // 3. INFRASTRUCTURE CHECKS
+                if (!target && infraAllowed) {
+                    for (let bName of infraPriority) {
+                        const lvl = getEffectiveLvl(bName);
+                        if (lvl < getMax(bName)) {
+                            const c = getNextCost(bName, lvl);
+                            const p = getNextPopCost(bName, lvl);
+
+                            if (canAffordVirtual(c, SAFE_BUFFER) && (virtualPopUsed + p <= popLimit)) {
+                                target = bName;
+                                targetCost = c;
+                                targetPop = p;
+                                break;
+                            }
                         }
                     }
                 }
-            }
 
-            // --- PHASE 4: EXECUTE ---
-            if (target) {
-                const result = game.build(target, v);
-                if (result) count++;
+                // 4. EXECUTE
+                if (target && targetCost) {
+                    // Attempt Build
+                    const result = game.build(target, v);
+
+                    // FIX: Check for explicit false, otherwise assume success (handles undefined returns)
+                    if (result !== false) {
+                        // Update Virtual State for NEXT iteration of the loop
+                        virtualRes[0] -= targetCost[0];
+                        virtualRes[1] -= targetCost[1];
+                        virtualRes[2] -= targetCost[2];
+                        virtualPopUsed += targetPop;
+
+                        totalBuilds++;
+                    } else {
+                        // Game engine rejected it (e.g. reqs not met)
+                        break;
+                    }
+                } else {
+                    // Nothing to build
+                    break;
+                }
             }
         });
 
-        ui.showToast(`Started construction in ${count} villages.`);
+        ui.showToast(`Queued ${totalBuilds} buildings.`);
         ui.renderOverview();
     },
 
@@ -2326,8 +2509,8 @@ const ui = {
 
         // Templates based on your request
         const techTemplates = {
-            'offense': ["Axe", "Light Cav", "Scout", "Heavy Cav"],
-            'defense': ["Spear", "Sword", "Scout", "Heavy Cav"]
+            'offense': ["Axe", "Light Cav", "Ram", "Scout", "Heavy Cav"],
+            'defense': ["Spear", "Sword", "Heavy Cav", "Scout"]
         };
 
         state.villages.forEach(v => {
@@ -2335,29 +2518,33 @@ const ui = {
             if (v.owner !== 'player') return;
             if (!v.buildings["Smithy"]) return;
 
-            // 2. BUSY CHECK (Critical Fix)
-            // If the village is already researching something, skip it.
+            // 2. BUSY CHECK
             if (v.queues.research && v.queues.research.length > 0) return;
 
             // 3. Determine Template
             const group = v.group || 'balanced';
-            // Default balanced -> defense (safer)
+
+            // --- CHANGE: Skip 'balanced' villages entirely ---
+            if (group === 'balanced') return;
+
+            // Get template (defaults to defense if group is unknown, but balanced is now handled above)
             const list = techTemplates[group] || techTemplates['defense'];
 
             // 4. Iterate Priorities
             for (let unit of list) {
-                const currentLvl = (v.techs && v.techs[unit]) ? v.techs[unit] : 0;
+                // Ensure techs object exists
+                if (!v.techs) v.techs = {};
 
-                // If not maxed (Level 3)
-                if (currentLvl < 3) {
-                    // Attempt Research
+                const currentLvl = v.techs[unit] || 1; // Default to 1 if undefined (engine usually starts at 1 if unlocked)
+                // Note: Check your engine defaults. If unlocked means 1, then < 3 checks for lvl 1 or 2.
+                // If 0 means locked, you might need research requirement checks.
+
+                // Max level check (Skip Nobles usually, max level 3 for others)
+                if (unit !== "Noble" && currentLvl < 3) {
                     const result = game.research(unit, v);
-
                     if (result) {
                         count++;
-                        // IMPORTANT: Break immediately. 
-                        // We successfully started 1 research, so this village is now busy.
-                        break;
+                        break; // Village is now busy
                     }
                 }
             }
