@@ -15,7 +15,7 @@ const CONFIG = {
 
     aiUpdateInterval: 25000,
     aiBatchSize: 50,
-    aiEliminationInterval: 75000
+    aiEliminationInterval: 150000
 };
 
 // --- HELPER: Time Formatting ---

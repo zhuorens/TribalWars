@@ -17,14 +17,19 @@ function recursiveRound(obj) {
 }
 
 // 2. Smart Save Trigger (Prevents lag when clicking fast)
-let saveTimeout = null;
-function requestAutoSave() {
-    // If a save is already queued, cancel it and restart the timer
-    if (saveTimeout) clearTimeout(saveTimeout);
+let saveScheduled = false;
 
-    // Wait 2 seconds of inactivity before triggering the heavy save
-    saveTimeout = setTimeout(() => {
+function requestAutoSave() {
+    // If a save is already waiting in the pipeline, just ignore the request
+    if (saveScheduled) return;
+
+    // Lock the gate so no more timers get created
+    saveScheduled = true;
+
+    // Wait 5 seconds, save the game, then unlock the gate
+    setTimeout(() => {
         engine.save();
+        saveScheduled = false; // Open the gate for the next save request
     }, 5000);
 }
 
@@ -81,6 +86,9 @@ const engine = {
 
                 // Ensure AI Timer exists to prevent instant jumps
                 if (!state.lastAiUpdate) state.lastAiUpdate = Date.now();
+
+                engine.buildOutgoingSupportIndex();
+
 
             } catch (e) { console.error("Save Load Error:", e); }
         } else {
@@ -198,18 +206,16 @@ const engine = {
             }
         });
 
-        // 5. Calculate Pop from Stationed Troops
-        state.villages.forEach(v => {
-            if (v.stationed) {
-                v.stationed.forEach(s => {
-                    if (s.originId === village.id) {
-                        for (let u in s.units) {
-                            if (DB.units[u]) used += s.units[u] * DB.units[u].pop;
-                        }
-                    }
-                });
+        // 5. Calculate Pop from Stationed Troops (Optimized O(1) lookup)
+        if (state.outgoingSupport && state.outgoingSupport[village.id]) {
+            const outgoingUnits = state.outgoingSupport[village.id];
+
+            for (let u in outgoingUnits) {
+                if (DB.units[u]) {
+                    used += outgoingUnits[u] * DB.units[u].pop;
+                }
             }
-        });
+        }
 
         return used;
     },
@@ -374,11 +380,13 @@ const engine = {
         const now = Date.now();
 
         // 1. Run World Simulation (AI Growth/Wars)
-        // It has its own internal timer check, so calling it every tick is safe.
         engine.processAiTurn();
 
         const dt = (now - state.lastTick) / 1000;
         state.lastTick = now;
+
+        // 🔥 Only one flag needed now: track if the UI needs a re-render this frame
+        let needsRefresh = false;
 
         // 2. Village Updates (Resources & Queues)
         state.villages.forEach(v => {
@@ -424,8 +432,8 @@ const engine = {
                         }
                     }
 
-                    ui.refresh();
-                    requestAutoSave();
+                    // 🔥 Flag the UI update instead of forcing it immediately
+                    needsRefresh = true;
                 }
             };
 
@@ -463,18 +471,28 @@ const engine = {
                         active.finish += active.unitTime;
                     }
                 }
+
+                // 🔥 Flag UI update if troops were actually built
                 if (unitsProduced) {
-                    ui.refresh();
-                    requestAutoSave();
+                    needsRefresh = true;
                 }
             });
         });
 
         // --- 4. Missions ---
         state.missions = state.missions.filter(m => {
-            if (now >= m.arrival) { engine.resolveMission(m); return false; }
+            if (now >= m.arrival) {
+                engine.resolveMission(m);
+                needsRefresh = true; // Missions landing always change the UI state
+                return false;
+            }
             return true;
         });
+
+        // 🔥 Execute the heavy UI re-render EXACTLY ONCE at the very end, and only if needed
+        if (needsRefresh) {
+            ui.refresh();
+        }
 
         ui.updateLoop();
     },
@@ -617,7 +635,7 @@ const engine = {
                         // Ratio 1.0 (Equal) -> 1.0 multiplier
                         // Ratio 2.0 (2x size) -> 1.23 multiplier
                         // Ratio 10.0 (10x size) -> 2.0 multiplier
-                        const powerMod = Math.pow(ratio, 0.3);
+                        const powerMod = Math.pow(ratio, 0.15);
 
                         // 4. Calculate Scores
                         const attScore = v.points * (0.8 + Math.random()) * powerMod;
@@ -764,7 +782,18 @@ const engine = {
                 stack = { originId: m.originId, units: {} };
                 target.stationed.push(stack);
             }
-            for (let u in m.units) stack.units[u] = (stack.units[u] || 0) + m.units[u];
+
+            // 🔥 NEW: Ensure the global lookup table exists for this origin village
+            if (!state.outgoingSupport) state.outgoingSupport = {};
+            if (!state.outgoingSupport[m.originId]) state.outgoingSupport[m.originId] = {};
+
+            for (let u in m.units) {
+                // Update the local target's stationed array
+                stack.units[u] = (stack.units[u] || 0) + m.units[u];
+
+                // 🔥 NEW: Sync the global outgoing support index
+                state.outgoingSupport[m.originId][u] = (state.outgoingSupport[m.originId][u] || 0) + m.units[u];
+            }
         }
 
         // 2. Send Report (Only if relevant to player)
@@ -904,12 +933,39 @@ const engine = {
                 else m.units[u] = 0;
             }
         }
-        // Defender
+
+        // Defender (Local Troops)
         const killDef = (obj) => {
             for (let u in obj) obj[u] = Math.max(0, obj[u] - Math.floor(obj[u] * defLossFactor));
         };
         killDef(target.units);
-        if (target.stationed) target.stationed.forEach(s => killDef(s.units));
+
+        // Defender (Stationed Troops - WITH CACHE SYNC)
+        if (target.stationed) {
+            target.stationed.forEach(s => {
+                for (let u in s.units) {
+                    const originalCount = s.units[u];
+                    const casualties = Math.floor(originalCount * defLossFactor);
+                    const newCount = Math.max(0, originalCount - casualties);
+                    const actualLost = originalCount - newCount;
+
+                    // Apply the casualties to the stationed stack
+                    s.units[u] = newCount;
+
+                    // 🔥 NEW: Subtract the actual casualties from the global cache
+                    if (actualLost > 0 && state.outgoingSupport && state.outgoingSupport[s.originId]) {
+                        if (state.outgoingSupport[s.originId][u]) {
+                            state.outgoingSupport[s.originId][u] -= actualLost;
+
+                            // Safety net
+                            if (state.outgoingSupport[s.originId][u] < 0) {
+                                state.outgoingSupport[s.originId][u] = 0;
+                            }
+                        }
+                    }
+                }
+            });
+        }
     },
 
     // --- SUB-HELPER: POST BATTLE ---
@@ -940,7 +996,7 @@ const engine = {
         if (result.win && m.units["Noble"] > 0) {
             const nobleCount = m.units["Noble"];
             let drop = 0;
-            for (let i = 0; i < nobleCount; i++) drop += Math.floor(23 + Math.random() * 13);
+            for (let i = 0; i < nobleCount; i++) drop += Math.floor(24 + Math.random() * 12);
             target.loyalty -= drop;
             loyaltyMsg = `<div style="color:blue"><b>${T('loyalty')} ${Math.floor(target.loyalty)}!</b> (-${drop})</div>`;
 
@@ -1133,12 +1189,46 @@ const engine = {
                 const newState = JSON.parse(e.target.result);
                 if (!newState.villages) throw new Error("Invalid Save");
                 state = newState;
+                engine.buildOutgoingSupportIndex();
                 engine.save();
                 alert("Loaded!");
                 location.reload();
             } catch (err) { alert("Error: " + err.message); }
         };
         reader.readAsText(file);
+    },
+
+    // Run this once during game load/initialization
+    buildOutgoingSupportIndex: function () {
+        // 1. Initialize the empty lookup table in your global state
+        state.outgoingSupport = {};
+
+        // 2. Do a single pass through all villages
+        state.villages.forEach(targetVillage => {
+
+            // If this village has troops stationed inside it from other villages
+            if (targetVillage.stationed && targetVillage.stationed.length > 0) {
+
+                targetVillage.stationed.forEach(s => {
+                    const originId = s.originId;
+
+                    // Create an entry for the origin village if it doesn't exist yet
+                    if (!state.outgoingSupport[originId]) {
+                        state.outgoingSupport[originId] = {};
+                    }
+
+                    // Add each unit type to the origin village's outgoing tally
+                    for (const [unitName, count] of Object.entries(s.units)) {
+                        if (!state.outgoingSupport[originId][unitName]) {
+                            state.outgoingSupport[originId][unitName] = 0;
+                        }
+                        state.outgoingSupport[originId][unitName] += count;
+                    }
+                });
+            }
+        });
+
+        console.log("Outgoing support index successfully built!");
     },
 
     resetGame: function () {
@@ -1269,15 +1359,12 @@ const engine = {
         // 3. Add Supporting (Stationed in others)
         // We must loop through ALL villages to find where our troops are parked.
         // (Performance note: For <1000 villages this is instant. For 10k+ it might lag slightly)
-        state.villages.forEach(otherV => {
-            if (otherV.stationed) {
-                otherV.stationed.forEach(s => {
-                    if (s.originId === village.id && s.units[unitName]) {
-                        total += s.units[unitName];
-                    }
-                });
-            }
-        });
+        if (state.outgoingSupport &&
+            state.outgoingSupport[village.id] &&
+            state.outgoingSupport[village.id][unitName]) {
+
+            total += state.outgoingSupport[village.id][unitName];
+        }
 
         return total;
     },

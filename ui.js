@@ -247,23 +247,35 @@ const ui = {
 
         let unitHtml = `<table style="width:100%; font-size:11px; border-collapse:collapse;"><tr><th style="text-align:left">${T('village')}</th><th>${T_Name('Headquarters')}</th><th>${T('troops')}</th></tr>`;
 
+        // OPTIMIZATION: Find this village's active missions ONCE, 
+        // rather than scanning the whole array for every unit type.
+        const activeMissions = state.missions.filter(m => m.originId === v.id && m.units);
+
         for (let u in DB.units) {
             const home = v.units[u] || 0;
             let outside = 0;
-            state.missions.forEach(m => {
-                if (m.originId === v.id && m.units && m.units[u]) outside += m.units[u];
-            });
-            state.villages.forEach(vil => {
-                if (vil.stationed) {
-                    vil.stationed.forEach(s => {
-                        if (s.originId === v.id && s.units[u]) outside += s.units[u];
-                    });
-                }
-            });
-            const totalOwn = home + outside;
-            let fromOthers = 0;
-            if (v.stationed) v.stationed.forEach(s => { if (s.units[u]) fromOthers += s.units[u]; });
 
+            // 1. Troops currently moving on missions
+            activeMissions.forEach(m => {
+                if (m.units[u]) outside += m.units[u];
+            });
+
+            // 2. Troops stationed elsewhere (Optimized O(1) Cache Lookup!)
+            if (state.outgoingSupport && state.outgoingSupport[v.id] && state.outgoingSupport[v.id][u]) {
+                outside += state.outgoingSupport[v.id][u];
+            }
+
+            const totalOwn = home + outside;
+
+            // 3. Troops from other players stationed HERE
+            let fromOthers = 0;
+            if (v.stationed) {
+                v.stationed.forEach(s => {
+                    if (s.units[u]) fromOthers += s.units[u];
+                });
+            }
+
+            // Render the HTML row if there are any troops to show
             if (totalOwn > 0 || fromOthers > 0) {
                 unitHtml += `<tr>
                     <td style="border-bottom:1px solid #ddd; padding:2px;">${T_Name(u)}</td>
@@ -622,8 +634,11 @@ const ui = {
             v.stationed.forEach((s, idx) => {
                 const originV = state.villages.find(vil => vil.id === s.originId);
                 const name = originV ? originV.name : "Unknown";
-                let uStr = "";
-                for (let u in s.units) if (s.units[u] > 0) uStr += `${T_Name(u)}: ${s.units[u]}, `;
+                let uStr = Object.keys(s.units)
+                    .filter(u => s.units[u] > 0)
+                    .map(u => `${T_Name(u)}: ${s.units[u]}`)
+                    .join(', ');
+
                 html += `<div style="background:#eee; padding:5px; margin-bottom:5px; border:1px solid #ccc;">
                     <b>${T('from')}: ${name}</b><br>
                     ${uStr}<br>
@@ -639,8 +654,11 @@ const ui = {
                 target.stationed.forEach((s, idx) => {
                     if (s.originId === v.id) {
                         found = true;
-                        let uStr = "";
-                        for (let u in s.units) if (s.units[u] > 0) uStr += `${T_Name(u)}: ${s.units[u]}, `;
+                        let uStr = Object.keys(s.units)
+                            .filter(u => s.units[u] > 0)
+                            .map(u => `${T_Name(u)}: ${s.units[u]}`)
+                            .join(', ');
+
                         html += `<div style="background:#eee; padding:5px; margin-bottom:5px; border:1px solid #ccc;">
                             <b>${T('at')}: ${target.name} (${target.x}|${target.y})</b><br>
                             ${uStr}<br>
@@ -1399,7 +1417,7 @@ const ui = {
         });
 
         // --- 4. BUILD HTML UI ---
-        
+
         // Top Bar: Global Button
         let html = `
             <div style="padding:10px; background:#f0f0f0; text-align:center; border-bottom:1px solid #ccc;">
@@ -1428,7 +1446,7 @@ const ui = {
                 const k = `K${y}${x}`;
                 const isSelected = filterTab === k;
                 const hasVillages = activeContinents.has(k);
-                
+
                 // Styling based on state
                 let bg = isSelected ? '#2196F3' : (hasVillages ? '#fff' : '#d5d5d5');
                 let color = isSelected ? '#fff' : (hasVillages ? '#333' : '#888');
@@ -1443,7 +1461,7 @@ const ui = {
                 `;
             }
         }
-        
+
         html += `</div></div>`; // Close grid and wrapper
 
         // --- 5. RENDER TABLE ---
@@ -1945,7 +1963,7 @@ const ui = {
 
             html += `
             <tr style="${bg} ${border} cursor:pointer; border-bottom:1px solid #eee; height:32px;" 
-                onclick="ui.switchVillage('${v.id}')"
+                onclick="ui.switchVillage('${v.id}', 'overview')"
                 onmouseenter="this.style.backgroundColor='#f7f7f7'"
                 onmouseleave="this.style.backgroundColor='${isSelected ? '#e3f2fd' : '#fff'}'">
                 
@@ -2225,37 +2243,10 @@ const ui = {
 
                 let trainedHere = false;
 
-                const getTrueUnitCount = (uName) => {
-                    let manualCount = v.units[uName] || 0;
-
-                    // 1. Add units currently waiting in queues
-                    const queues = ['barracks', 'stable', 'workshop', 'academy'];
-                    queues.forEach(qName => {
-                        if (v.queues[qName]) {
-                            v.queues[qName].forEach(q => {
-                                if (q.unit === uName) {
-                                    // Handle varying property names (amount/count) depending on the engine
-                                    manualCount += (q.amount || q.count || 1);
-                                }
-                            });
-                        }
-                    });
-
-                    // 2. Check engine's total (which might include troops stationed outside the village)
-                    let engineCount = 0;
-                    if (typeof engine.getUnitCountTotal === 'function') {
-                        engineCount = engine.getUnitCountTotal(v, uName);
-                    }
-
-                    // 3. Return whichever is larger. This prevents double-counting while ensuring 
-                    // we don't miss queues (if engine fails) or external troops (if manual fails).
-                    return Math.max(manualCount, engineCount);
-                };
-
                 // --- PHASE 1: NOBLE PRIORITY ---
                 if (template["Noble"]) {
                     const target = template["Noble"];
-                    const totalOwned = getTrueUnitCount("Noble");
+                    const totalOwned = engine.getUnitCountTotal(v, "Noble");
                     const missing = target - totalOwned;
 
                     if (missing > 0) {
@@ -2290,7 +2281,7 @@ const ui = {
                     if (target <= 0) continue;
 
                     // Use the new robust counter
-                    const totalOwned = getTrueUnitCount(unit);
+                    const totalOwned = engine.getUnitCountTotal(v, unit);
                     const missing = target - totalOwned;
 
                     if (missing > 0) {

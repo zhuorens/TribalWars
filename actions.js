@@ -403,11 +403,37 @@ const game = {
         const v = engine.getCurrentVillage();
         const stack = v.stationed[idx];
         const originV = state.villages.find(vil => vil.id === stack.originId);
+
+        // Calculate Euclidean distance: d = \sqrt{(x_2-x_1)^2 + (y_2-y_1)^2}
         const dist = originV ? Math.sqrt(Math.pow(originV.x - v.x, 2) + Math.pow(originV.y - v.y, 2)) : 10;
         const dur = dist * (state.debugFastTravel ? 2 : 60);
+
+        // 🔥 NEW: Sync the cache by subtracting the returning troops
+        if (state.outgoingSupport && state.outgoingSupport[stack.originId]) {
+            for (let u in stack.units) {
+                if (state.outgoingSupport[stack.originId][u]) {
+                    state.outgoingSupport[stack.originId][u] -= stack.units[u];
+
+                    // Safety net: ensure we don't accidentally dip into negative numbers
+                    if (state.outgoingSupport[stack.originId][u] < 0) {
+                        state.outgoingSupport[stack.originId][u] = 0;
+                    }
+                }
+            }
+        }
+
+        // Remove the stack and create the return mission
         v.stationed.splice(idx, 1);
-        state.missions.push({ originId: stack.originId, targetId: stack.originId, units: stack.units, type: 'return', arrival: Date.now() + (dur * 1000) });
-        ui.refresh(); ui.closeReportModal();
+        state.missions.push({
+            originId: stack.originId,
+            targetId: stack.originId,
+            units: stack.units,
+            type: 'return',
+            arrival: Date.now() + (dur * 1000)
+        });
+
+        ui.refresh();
+        ui.closeReportModal();
         // CHANGED: Use soft save
         requestAutoSave();
     },
@@ -415,15 +441,36 @@ const game = {
         const v = engine.getCurrentVillage();
         const target = state.villages.find(vil => vil.id === targetId);
         if (!target || !target.stationed) return;
+
         const idx = target.stationed.findIndex(s => s.originId === v.id);
         if (idx === -1) return;
+
         const stack = target.stationed[idx];
+
+        // 🔥 NEW: Sync the cache by subtracting the recalled troops
+        // In this function, `v.id` is the originId.
+        if (state.outgoingSupport && state.outgoingSupport[v.id]) {
+            for (let u in stack.units) {
+                if (state.outgoingSupport[v.id][u]) {
+                    state.outgoingSupport[v.id][u] -= stack.units[u];
+
+                    // Safety net: ensure we don't accidentally dip into negative numbers
+                    if (state.outgoingSupport[v.id][u] < 0) {
+                        state.outgoingSupport[v.id][u] = 0;
+                    }
+                }
+            }
+        }
+
+        // Remove the stack and create the return mission
         target.stationed.splice(idx, 1);
+
         const dist = Math.sqrt(Math.pow(target.x - v.x, 2) + Math.pow(target.y - v.y, 2));
         const dur = dist * (state.debugFastTravel ? 2 : 60);
         state.missions.push({ originId: v.id, targetId: v.id, units: stack.units, type: 'return', arrival: Date.now() + (dur * 1000) });
-        ui.refresh(); ui.closeReportModal();
-        // CHANGED: Use soft save
+
+        ui.refresh();
+        ui.closeReportModal();
         requestAutoSave();
     },
     sendResources: function () {
