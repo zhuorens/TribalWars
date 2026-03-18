@@ -639,7 +639,7 @@ const engine = {
 
                         // 4. Calculate Scores
                         const attScore = v.points * (0.8 + Math.random()) * powerMod;
-                        const wallBonus = 1 + ((target.buildings["Wall"] || 0) * 0.03);
+                        const wallBonus = 1 + ((target.buildings["Wall"] || 0) * 0.025);
 
                         // 5. Resolution
                         if (attScore > target.points * wallBonus) {

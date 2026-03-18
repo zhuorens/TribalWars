@@ -443,3 +443,14 @@ body { font-family: 'Segoe UI', sans-serif; background-color: #3b2e2a; color: #3
     justify-content: space-between;
     margin-bottom: 2px;
 }
+
+.overview-row {
+    background-color: #fff;
+    transition: background-color 0.1s ease;
+}
+.overview-row.row-selected {
+    background-color: #e3f2fd !important;
+}
+.overview-row:hover:not(.row-selected) {
+    background-color: #f7f7f7;
+}

@@ -39,6 +39,7 @@ const ui = {
             document.body.appendChild(tt);
         }
         ui.initCheatDropdown();
+        ui.setupMinimapInteractions();
         ui.updateInterfaceText();
         ui.refresh();
         ui.showTab('hq', document.getElementById('tab-hq'));
@@ -392,7 +393,6 @@ const ui = {
 
     openAttackModal: function (t) {
         let target = t;
-        // Attempt to find real village data in state
         if (t.id) {
             const found = state.villages.find(v => v.id === t.id);
             if (found) target = found;
@@ -401,23 +401,33 @@ const ui = {
         ui.selTile = target;
         const v = engine.getCurrentVillage();
 
-        // Determine Ownership & Profile
-        const ownerId = target.owner || target.type; // e.g. 'player', 'barbarian', 'ai_1'
+        const ownerId = target.owner || target.type;
         const isMyVillage = ownerId === 'player' && state.villages.some(vil => vil.id === target.id);
-        const profile = engine.getPlayerProfile(ownerId); // Get AI Name/Color
+        const profile = engine.getPlayerProfile(ownerId);
 
-        // 1. Build Header Info (Owner Stats)
         const globalScore = engine.getGlobalScore(ownerId);
         const statusText = !profile.alive ? ` <span style="color:red; font-size:10px;">(DEFEATED)</span>` : "";
 
+        // 1. Build Header & Selection Template
         let html = `
         <div style="background:#f4f4f4; padding:5px; margin-bottom:10px; border-bottom:1px solid #ccc; font-size:11px;">
             <div style="display:flex; justify-content:space-between;">
                 <span><b>Owner:</b> <span style="color:${profile.color}">${profile.name}</span>${statusText}</span>
                 <span><b>Points:</b> ${target.points || 0}</span>
             </div>
-            ${ownerId !== 'player' && ownerId !== 'barbarian' ? `<div style="color:#666; margin-top:2px;">Empire Score: ${globalScore.toLocaleString()} pts</div>` : ''}
         </div>
+        
+        <div style="display:flex; gap:4px; margin-bottom:12px; background:#e0e0e0; padding:4px; border-radius:4px;">
+            <button class="btn-mini" style="flex:2; background:#d32f2f; color:white; border:none; font-weight:bold; cursor:pointer;" 
+                onclick="ui.quickFillAndLaunch('offense')" title="Instantly send all Axe, LC, Ram, Cat, Noble">
+                🚀 INSTANT NUKE
+            </button>
+            <button class="btn-mini" style="flex:1; background:#666; color:white; border:none; cursor:pointer;" 
+                onclick="ui.quickFillUnits('clear')">
+                ✖
+            </button>
+        </div>
+
         <div style="margin-bottom:10px; font-weight:bold; text-align:right;">
             ⏱️ ${T('duration')}: <span id="attack-duration">--:--:--</span>
         </div>`;
@@ -436,7 +446,7 @@ const ui = {
                     <span style="font-size:9px;">🏃 ${speed} m/tile</span>
                 </div>
                 <div class="input-group">
-                    <input type="number" id="atk-${u}" max="${v.units[u]}" value="0" style="width:50px" oninput="ui.updateTravelTime()">
+                    <input type="number" id="atk-${u}" data-unit="${u}" max="${v.units[u]}" value="0" style="width:50px" oninput="ui.updateTravelTime()">
                     <button class="btn-mini" onclick="document.getElementById('atk-${u}').value = ${v.units[u]}; ui.updateTravelTime();">${T('max')}</button>
                 </div>
             </div>`;
@@ -514,11 +524,9 @@ const ui = {
             }
         }
 
-        // 4. Modal Title
+        // 4. Modal Title & Setup
         const coords = (target.x !== undefined && target.y !== undefined) ? `(${target.x}|${target.y})` : "";
-        const titleText = isMyVillage
-            ? `${target.name} ${coords}`
-            : `${T('target')}: ${target.name} ${coords}`;
+        const titleText = isMyVillage ? `${target.name} ${coords}` : `${T('target')}: ${target.name} ${coords}`;
 
         document.getElementById('a-modal-title').innerText = titleText;
         document.getElementById('a-modal-units').innerHTML = html;
@@ -545,6 +553,50 @@ const ui = {
         footer.innerHTML = buttons;
         footer.style.display = 'flex';
         document.getElementById('attack-modal').style.display = 'flex';
+
+        ui.updateTravelTime();
+    },
+
+    quickFillAndLaunch: function (type) {
+        // 1. Fill the units first using the existing logic
+        this.quickFillUnits(type);
+
+        // 2. Small safety check: Make sure we actually have units selected
+        const inputs = document.querySelectorAll('#a-modal-units input[type="number"]');
+        let totalSelected = 0;
+        inputs.forEach(i => totalSelected += parseInt(i.value || 0));
+
+        if (totalSelected === 0) {
+            console.warn("No units available for this template.");
+            return;
+        }
+
+        // 3. EXECUTE: Call the game's launch function immediately
+        game.launchAttack('attack');
+
+        // 4. Close the modal since the attack is gone
+        this.closeAttackModal();
+    },
+
+    quickFillUnits: function (type) {
+        const v = engine.getCurrentVillage();
+        const inputs = document.querySelectorAll('#a-modal-units input[type="number"]');
+
+        inputs.forEach(i => i.value = 0);
+
+        if (type === 'offense') {
+            const attackers = ['Axe', 'Light Cav', 'Ram', 'Catapult', 'Noble'];
+            attackers.forEach(u => {
+                const el = document.getElementById(`atk-${u}`);
+                if (el && v.units[u] > 0) el.value = v.units[u];
+            });
+        }
+        else if (type === 'fake') {
+            const ramEl = document.getElementById('atk-Ram');
+            const axeEl = document.getElementById('atk-Axe');
+            if (ramEl && v.units['Ram'] > 0) ramEl.value = 1;
+            else if (axeEl && v.units['Axe'] > 0) axeEl.value = 1; // Fallback to 1 axe if no rams
+        }
 
         ui.updateTravelTime();
     },
@@ -1093,7 +1145,6 @@ const ui = {
 
         const rect = cvs.getBoundingClientRect();
 
-        // Only update if dimensions changed to avoid clearing context unnecessarily
         if (cvs.width !== rect.width || cvs.height !== rect.height) {
             cvs.width = rect.width;
             cvs.height = rect.height;
@@ -1108,20 +1159,33 @@ const ui = {
 
         const scale = w / CONFIG.mapSize;
 
-        // 2. Draw Villages with Dynamic Colors
+        // 2. Draw 50x50 Continent Lines
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(0, 0, 0, 0.2)";
+        ctx.lineWidth = 1;
+
+        for (let i = 0; i <= CONFIG.mapSize; i += 50) {
+            const pos = i * scale;
+            ctx.moveTo(pos, 0);
+            ctx.lineTo(pos, h);
+            ctx.moveTo(0, pos);
+            ctx.lineTo(w, pos);
+        }
+        ctx.stroke();
+
+        // 3. Draw Villages
         state.villages.forEach(v => {
             const mx = v.x * scale;
             const my = v.y * scale;
 
-            // Fetch Profile Color
             const profile = engine.getPlayerProfile(v.owner);
-            if (v.owner === 'player') { profile.color = '#ffffff' }
-            ctx.fillStyle = profile ? profile.color : '#888'; // Default grey if missing
+            if (v.owner === 'player' && profile) { profile.color = '#ffffff' }
+            ctx.fillStyle = profile ? profile.color : '#888';
 
             ctx.fillRect(mx, my, 3, 3);
         });
 
-        // 3. Draw Viewport Rectangle
+        // 4. Draw Viewport Rectangle
         const viewTiles = 15;
         const rectSize = viewTiles * scale;
         const vx = state.mapView.x * scale;
@@ -1131,9 +1195,21 @@ const ui = {
         ctx.lineWidth = 1.1;
         ctx.strokeRect(vx - (rectSize / 2) + 1, vy - (rectSize / 2) + 1, rectSize + 1, rectSize + 1);
 
-        // 4. Click Navigation Logic
+        // That's it! No more click logic down here.
+    },
+
+    setupMinimapInteractions: function () {
+        const cvs = document.getElementById('minimap');
+        if (!cvs) return;
+
+        // Attach the click event exactly once
         cvs.onclick = (e) => {
             const rect = cvs.getBoundingClientRect();
+
+            // We have to recalculate the scale here since it's no longer inside renderMinimap,
+            // but reading cvs.width is practically instant so it's perfectly fine.
+            const scale = cvs.width / CONFIG.mapSize;
+
             const clickX = e.clientX - rect.left;
             const clickY = e.clientY - rect.top;
 
@@ -1146,6 +1222,7 @@ const ui = {
             state.mapView.x = newX;
             state.mapView.y = newY;
 
+            // Trigger the redraws based on the new coordinates
             ui.renderMap();
             ui.renderMinimap();
         };
@@ -1674,125 +1751,146 @@ const ui = {
         const container = document.getElementById('overview-list');
         if (!container) return;
 
-        // --- CONSTANTS ---
-        const MAX_RES_LEVEL = 30;
+        // 1. Process data
+        const viewModels = this.buildOverviewViewModels();
+
+        // 2. Stitch HTML pieces together
+        let html = this.buildOverviewFiltersHtml(viewModels.length);
+        html += this.buildOverviewHeaderHtml();
+        html += this.buildOverviewRowsHtml(viewModels);
+        html += `</tbody></table></div>`;
+
+        // 3. Render
+        container.innerHTML = html;
+    },
+
+    buildOverviewViewModels: function () {
         const MAX_FARM_LEVEL = 30;
-
-        // 1. Data Setup & Filter Logic
-        let myVillages = state.villages.filter(v => v.owner === 'player');
         const currentVillage = engine.getCurrentVillage();
-
-        // Ensure defaults exist if not set
         const f = this.overviewFilters;
         if (!f.alertType) f.alertType = 'none';
 
-        // --- APPLY FILTERS ---
-        myVillages = myVillages.filter(v => {
-            // A. Group Filter
-            if (f.group !== 'all') {
-                const g = v.group || 'balanced';
-                if (g !== f.group) return false;
-            }
+        // Filter and Map
+        let viewModels = state.villages
+            .filter(v => v.owner === 'player')
+            .map(v => {
+                // 🔥 NEW: Calculate the 50x50 Continent Block
+                const contY = Math.floor(v.y / 50);
+                const contX = Math.floor(v.x / 50);
 
-            // B. Unit Filter
-            if (f.unitType !== 'none') {
-                const count = v.units[f.unitType] || 0;
-                if (f.unitOp === '>' && count <= f.unitVal) return false;
-                if (f.unitOp === '<' && count >= f.unitVal) return false;
-            }
+                return {
+                    v: v,
+                    dist: currentVillage ? Math.sqrt(Math.pow(v.x - currentVillage.x, 2) + Math.pow(v.y - currentVillage.y, 2)) : 0,
+                    storage: engine.getStorage(v),
+                    popUsed: engine.getPopUsed(v),
+                    popMax: engine.getPopLimit(v),
+                    farmLvl: v.buildings["Farm"] || 0,
+                    groupRank: (v.group === 'defense') ? 1 : (v.group === 'offense' ? 2 : 3),
 
-            // C. Building Filter
-            if (f.buildType !== 'none') {
-                const lvl = v.buildings[f.buildType] || 0;
-                if (f.buildOp === '>' && lvl <= f.buildVal) return false;
-                if (f.buildOp === '<' && lvl >= f.buildVal) return false;
-            }
+                    // 🔥 NEW: Add continent data to the view model
+                    continentStr: `K${contY}${contX}`,
+                    continentSort: contY * 100 + contX
+                };
+            })
+            .filter(vm => {
+                const { v, storage, popUsed, popMax, farmLvl } = vm;
 
-            // D. Alert Filter (NEW)
-            if (f.alertType === 'res_95') {
-                const storage = engine.getStorage(v);
-                // Keep if ANY resource is >= 95% full
-                const isFull = v.res.some(r => r >= storage * 0.95);
-                if (!isFull) return false;
-            }
+                if (f.group !== 'all' && (v.group || 'balanced') !== f.group) return false;
 
-            if (f.alertType === 'farm_90') {
-                const popUsed = engine.getPopUsed(v);
-                const popMax = engine.getPopLimit(v);
-                const farmLvl = v.buildings["Farm"] || 0;
+                if (f.unitType !== 'none') {
+                    const count = v.units[f.unitType] || 0;
+                    if (f.unitOp === '>' && count <= f.unitVal) return false;
+                    if (f.unitOp === '<' && count >= f.unitVal) return false;
+                }
 
-                // Keep if Pop >= 90% AND Farm is NOT Maxed
-                const isFull = (popUsed / popMax) >= 0.90;
-                const canUpgrade = farmLvl < MAX_FARM_LEVEL;
+                if (f.buildType !== 'none') {
+                    const lvl = v.buildings[f.buildType] || 0;
+                    if (f.buildOp === '>' && lvl <= f.buildVal) return false;
+                    if (f.buildOp === '<' && lvl >= f.buildVal) return false;
+                }
 
-                if (!isFull || !canUpgrade) return false;
-            }
+                if (f.alertType === 'res_95' && !v.res.some(r => r >= storage * 0.95)) return false;
+                if (f.alertType === 'farm_90' && !((popUsed / popMax) < 0.90 && farmLvl < MAX_FARM_LEVEL)) return false;
+                if (f.alertType === 'res_lt_95' && !v.res.some(r => r < storage * 0.95)) return false;
 
-            return true;
-        });
+                return true;
+            });
 
-        // 2. Sorting
+        // Sort
         const sortKey = this.overviewSort.key;
         const order = this.overviewSort.asc ? 1 : -1;
 
-        const getDist = (v) => {
-            if (!currentVillage) return 0;
-            return Math.sqrt(Math.pow(v.x - currentVillage.x, 2) + Math.pow(v.y - currentVillage.y, 2));
-        };
-
-        const getGroupRank = (v) => {
-            if (v.group === 'defense') return 1;
-            if (v.group === 'offense') return 2;
-            return 3;
-        };
-
-        myVillages.sort((a, b) => {
-            if (sortKey === 'points') return (a.points - b.points) * order;
-            if (sortKey === 'dist') return (getDist(a) - getDist(b)) * order;
+        return viewModels.sort((a, b) => {
+            if (sortKey === 'points') return (a.v.points - b.v.points) * order;
+            if (sortKey === 'dist') return (a.dist - b.dist) * order;
+            // 🔥 NEW: Handle the Continent Sort
+            if (sortKey === 'continent') return (a.continentSort - b.continentSort) * order;
             if (sortKey === 'group') {
-                const diff = getGroupRank(a) - getGroupRank(b);
+                const diff = a.groupRank - b.groupRank;
                 if (diff !== 0) return diff * order;
-                return a.name.localeCompare(b.name);
+                return a.v.name.localeCompare(b.v.name);
             }
-            return a.name.localeCompare(b.name) * order;
+            return a.v.name.localeCompare(b.v.name) * order;
         });
+    },
 
-        const getSortIcon = (key) => (this.overviewSort.key !== key) ? `<span style="opacity:0.3">↕</span>` : (this.overviewSort.asc ? "▲" : "▼");
+    buildOverviewUnitString: function (unitsObj, techsObj, color = "#000", checkTech = false) {
+        const unitIcons = {
+            "Spear": "🔱", "Sword": "🗡️", "Axe": "🪓", "Archer": "🏹",
+            "Scout": "♘", "Light Cav": "🐴", "Heavy Cav": "♞",
+            "Ram": "🐏", "Catapult": "☄️", "Noble": "👑", "Paladin": "⚜️"
+        };
 
-        // --- FILTER UI HTML ---
+        let parts = [];
+        for (let u in DB.units) {
+            const count = unitsObj[u] || 0;
+            if (count > 0) {
+                const icon = unitIcons[u] || u.substring(0, 1);
+                let suffix = "";
+                if (checkTech) {
+                    const currentTech = (techsObj && techsObj[u]) ? techsObj[u] : 0;
+                    const maxTech = (u === "Noble") ? 1 : 3;
+                    if (currentTech < maxTech) {
+                        suffix = "<sup style='color:#1976D2; font-weight:bold; cursor:help;' title='Tech Upgrade Available'>^</sup>";
+                    }
+                }
+                parts.push(`<span style="color:${color}">${icon}${count}${suffix}</span>`);
+            }
+        }
+        return parts.length > 0 ? `<span style="margin-right:6px;">${parts.join(" ")}</span>` : "";
+    },
+
+    buildOverviewFiltersHtml: function (resultCount) {
+        const f = this.overviewFilters;
         const groups = ['all', 'offense', 'defense', 'balanced'];
         const units = ['none', ...Object.keys(DB.units)];
         const buildings = ['none', ...Object.keys(DB.buildings)];
         const alerts = [
             { val: 'none', lbl: 'None' },
             { val: 'res_95', lbl: '📦 Res ≥ 95%' },
-            { val: 'farm_90', lbl: '🌾 Farm ≥ 90% (Not Max)' }
+            { val: 'farm_90', lbl: '🌾 Farm ≥ 90%' },
+            { val: 'res_lt_95', lbl: '📦 Res < 95%' }
         ];
 
         const mkOpts = (arr, selected) => arr.map(x => `<option value="${x}" ${x === selected ? 'selected' : ''}>${x}</option>`).join('');
         const mkAlertOpts = (arr, selected) => arr.map(x => `<option value="${x.val}" ${x.val === selected ? 'selected' : ''}>${x.lbl}</option>`).join('');
 
-        let filterHtml = `
+        return `
             <div style="background:#f1f1f1; padding:10px; border:1px solid #ddd; border-bottom:none; display:flex; gap:15px; align-items:center; flex-wrap:wrap; font-size:11px;">
-                
                 <div style="display:flex; align-items:center; gap:5px;">
                     <b>🏷️ Type:</b>
                     <select onchange="ui.setOverviewFilter('group', this.value)" style="padding:3px;">
                         ${mkOpts(groups, f.group)}
                     </select>
                 </div>
-
                 <div style="width:1px; height:20px; background:#ccc;"></div>
-
                 <div style="display:flex; align-items:center; gap:5px;">
                     <b>⚠️ Alerts:</b>
                     <select onchange="ui.setOverviewFilter('alertType', this.value)" style="padding:3px; color:${f.alertType !== 'none' ? '#d32f2f' : '#333'}; font-weight:${f.alertType !== 'none' ? 'bold' : 'normal'}">
                         ${mkAlertOpts(alerts, f.alertType)}
                     </select>
                 </div>
-
                 <div style="width:1px; height:20px; background:#ccc;"></div>
-
                 <div style="display:flex; align-items:center; gap:5px;">
                     <b>⚔️ Units:</b>
                     <select onchange="ui.setOverviewFilter('unitType', this.value)" style="padding:3px;">
@@ -1806,7 +1904,6 @@ const ui = {
                         <input type="number" value="${f.unitVal}" onchange="ui.setOverviewFilter('unitVal', Number(this.value))" style="width:50px; padding:3px;">
                     ` : ''}
                 </div>
-
                 <div style="display:flex; align-items:center; gap:5px;">
                     <b>🏗️ Build:</b>
                     <select onchange="ui.setOverviewFilter('buildType', this.value)" style="padding:3px;">
@@ -1820,162 +1917,100 @@ const ui = {
                         <input type="number" value="${f.buildVal}" onchange="ui.setOverviewFilter('buildVal', Number(this.value))" style="width:40px; padding:3px;">
                     ` : ''}
                 </div>
-
                 <button class="btn-mini" onclick="ui.clearOverviewFilters()" style="margin-left:auto; background:#757575; color:white; border:none; padding:4px 10px; border-radius:3px; cursor:pointer;" title="Reset all filters">
                     ✖ Clear
                 </button>
             </div>
-            
             <div style="background:#fff; border-bottom:1px solid #ddd; padding:5px 10px; font-size:10px; color:#666;">
-                Showing <b>${myVillages.length}</b> villages matching criteria.
+                Showing <b>${resultCount}</b> villages matching criteria.
             </div>
         `;
+    },
 
-        // 3. Table Header
-        let html = filterHtml + `
+    buildOverviewHeaderHtml: function () {
+        const getSortIcon = (key) => (this.overviewSort.key !== key) ? `<span style="opacity:0.3">↕</span>` : (this.overviewSort.asc ? "▲" : "▼");
+
+        return `
         <div style="overflow-x:auto; background:#fff; border-radius:3px; box-shadow:0 1px 2px rgba(0,0,0,0.1);">
         <table class="rank-table" style="width:100%; min-width:1200px; font-size:12px; border-collapse: collapse;">
             <thead>
                 <tr style="background:#f0f2f5; color:#444; border-bottom:1px solid #d1d1d1; text-align:left;">
-                    <th style="width:18%; padding:8px 8px;">
+                    <th style="width:16%; padding:8px 8px;">
                         <span style="cursor:pointer; font-weight:bold;" onclick="ui.toggleOverviewSort('group')" title="Sort by Type">Type${getSortIcon('group')}</span>
                         <span style="color:#ccc; margin:0 4px;">|</span>
                         <span style="cursor:pointer; font-weight:bold;" onclick="ui.toggleOverviewSort('name')" title="Sort by Name">Name${getSortIcon('name')}</span>
                     </th>
+                    <th style="width:5%; padding:8px 8px; cursor:pointer;" onclick="ui.toggleOverviewSort('continent')" title="Sort by Continent">Cont ${getSortIcon('continent')}</th>
                     <th style="width:5%; padding:8px 8px; cursor:pointer;" onclick="ui.toggleOverviewSort('dist')">Dist ${getSortIcon('dist')}</th>
                     <th style="width:6%; padding:8px 8px; cursor:pointer;" onclick="ui.toggleOverviewSort('points')">Pts ${getSortIcon('points')}</th>
                     <th style="width:14%; padding:8px 8px;">Resources</th>
                     <th style="width:6%; padding:8px 8px;">Pop</th>
                     <th style="width:18%; padding:8px 8px;">Buildings</th>
-                    <th style="width:23%; padding:8px 8px;">Troops (Own | <span style="color:#1976D2">Support</span>)</th>
-                    <th style="width:10%; padding:8px 8px; text-align:center;">
-                        <button class="btn-mini" style="background:#333; color:white; border:none; padding:4px 8px; border-radius:3px; cursor:pointer; font-size:10px;" 
-                            onclick="ui.openMassActionModal()" title="Open Mass Manager">
-                            ⚡ MASS
-                        </button>
+                    <th style="width:22%; padding:8px 8px;">Troops (Own | <span style="color:#1976D2">Support</span>)</th>
+                    <th style="width:8%; padding:8px 8px; text-align:center;">
+                        <button class="btn-mini" style="background:#333; color:white; border:none; padding:4px 8px; border-radius:3px; cursor:pointer; font-size:10px;" onclick="ui.openMassActionModal()" title="Open Mass Manager">⚡ MASS</button>
                     </th> 
                 </tr>
             </thead>
             <tbody>
         `;
+    },
 
-        const unitIcons = {
-            "Spear": "🔱", "Sword": "🗡️", "Axe": "🪓", "Archer": "🏹",
-            "Scout": "♘", "Light Cav": "🐴", "Heavy Cav": "♞",
-            "Ram": "🐏", "Catapult": "☄️", "Noble": "👑", "Paladin": "⚜️"
-        };
+    buildOverviewRowsHtml: function (viewModels) {
+        const MAX_RES_LEVEL = 30;
+        const MAX_FARM_LEVEL = 30;
+        let html = "";
 
-        // 4. Rows
-        myVillages.forEach(v => {
+        viewModels.forEach(vm => {
+            // 🔥 Notice we pull continentStr out of the view model here
+            const { v, dist, storage, popUsed, popMax, farmLvl, continentStr } = vm;
             const isSelected = v.id === state.selectedVillageId;
-            const bg = isSelected ? "background:#e3f2fd;" : "background:#fff";
-            const border = isSelected ? "border-left: 3px solid #2196F3;" : "border-left: 3px solid transparent;";
+            const bgClass = isSelected ? "row-selected" : "row-normal";
 
-            // Distance
-            const dist = getDist(v);
-            const distDisplay = isSelected ? "-" : dist.toFixed(1);
-
-            // Resources
-            const storage = engine.getStorage(v);
             const resHtml = [0, 1, 2].map(i => {
                 const val = Math.floor(v.res[i]);
                 const color = (val > storage * 0.9) ? "#d32f2f" : "#333";
                 const icon = ["🌲", "🧱", "🔩"][i];
-
                 const bName = ["Timber Camp", "Clay Pit", "Iron Mine"][i];
-                const lvl = v.buildings[bName] || 0;
-                const notMaxed = lvl < MAX_RES_LEVEL ? "<sup style='color:#D32F2F; font-weight:bold; cursor:help;' title='Not Max Level'>^</sup>" : "";
-
+                const notMaxed = (v.buildings[bName] || 0) < MAX_RES_LEVEL ? "<sup style='color:#D32F2F; font-weight:bold; cursor:help;' title='Not Max Level'>^</sup>" : "";
                 return `<span style="color:${color}; margin-right:6px;">${icon}${val}${notMaxed}</span>`;
             }).join("");
 
-            // Pop (VISUAL LOGIC UPDATED)
-            const popUsed = engine.getPopUsed(v);
-            const popMax = engine.getPopLimit(v);
-            const farmLvl = v.buildings["Farm"] || 0;
-            const isFarmMaxed = farmLvl >= MAX_FARM_LEVEL;
+            const popColor = (!isSelected && farmLvl < MAX_FARM_LEVEL && (popUsed / popMax > 0.9)) ? "#d32f2f" : "#444";
 
-            // Only show red if >90% AND we can still upgrade the farm
-            let popColor = "#444";
-            if (!isFarmMaxed && (popUsed / popMax > 0.9)) {
-                popColor = "#d32f2f";
-            }
-
-            // Buildings
-            const b = v.buildings;
             const mkB = (icon, name) => {
-                const lvl = b[name] || 0;
-                if (lvl === 0 && name !== 'Headquarters') return "";
-                return `<span title="${name} Lv${lvl}" style="margin-right:3px; cursor:help;">${icon}${lvl}</span>`;
+                const lvl = v.buildings[name] || 0;
+                return (lvl === 0 && name !== 'Headquarters') ? "" : `<span title="${name} Lv${lvl}" style="margin-right:3px; cursor:help;">${icon}${lvl}</span>`;
             };
             const bldgs = `${mkB('🏛️', 'Headquarters')}${mkB('⚔️', 'Barracks')}${mkB('🐴', 'Stable')}${mkB('🔧', 'Workshop')}${mkB('⚒️', 'Smithy')}${mkB('⚖️', 'Market')}${mkB('🌾', 'Farm')}${mkB('📦', 'Warehouse')}${mkB('🧱', 'Wall')}`;
 
-            // Troops
-            const renderUnitString = (unitsObj, color = "#000", checkTech = false) => {
-                let parts = [];
-                for (let u in DB.units) {
-                    const count = unitsObj[u] || 0;
-                    if (count > 0) {
-                        const icon = unitIcons[u] || u.substring(0, 1);
-                        let suffix = "";
-                        if (checkTech) {
-                            const currentTech = (v.techs && v.techs[u]) ? v.techs[u] : 0;
-                            const maxTech = (u === "Noble") ? 1 : 3;
-                            if (currentTech < maxTech) {
-                                suffix = "<sup style='color:#1976D2; font-weight:bold; cursor:help;' title='Tech Upgrade Available'>^</sup>";
-                            }
-                        }
-                        parts.push(`<span style="color:${color}">${icon}${count}${suffix}</span>`);
-                    }
-                }
-                return parts.length > 0 ? `<span style="margin-right:6px;">${parts.join(" ")}</span>` : "";
-            };
-
-            const ownStr = renderUnitString(v.units, "#333", true);
+            const ownStr = this.buildOverviewUnitString(v.units, v.techs, "#333", true);
             let supStr = "";
             if (v.stationed && v.stationed.length > 0) {
                 let totalSup = {};
                 v.stationed.forEach(s => { for (let u in s.units) totalSup[u] = (totalSup[u] || 0) + s.units[u]; });
-                supStr = renderUnitString(totalSup, "#1976D2", false);
+                supStr = this.buildOverviewUnitString(totalSup, null, "#1976D2", false);
             }
 
-            let troopDisplay = ownStr;
-            if (ownStr && supStr) troopDisplay += ` <span style="color:#ccc; margin:0 4px;">|</span> ${supStr}`;
-            else if (!ownStr && supStr) troopDisplay = supStr;
-            else if (!ownStr && !supStr) troopDisplay = `<span style="color:#ccc">-</span>`;
+            const troopDisplay = ownStr && supStr ? `${ownStr} <span style="color:#ccc; margin:0 4px;">|</span> ${supStr}` : (ownStr || supStr || `<span style="color:#ccc">-</span>`);
 
-            // Actions
-            let actionHtml = "";
-            if (isSelected) {
-                actionHtml = `<span style="color:#999; font-style:italic;">(Current)</span>`;
-            } else {
-                actionHtml = `
-                    <button class="btn-mini" style="background:#4CAF50; color:#fff; border:none; padding:3px 8px; border-radius:3px; cursor:pointer; font-size:11px;" 
-                        title="Transport" onclick="event.stopPropagation(); ui.openMarketModal('${v.id}')">🛒</button>
-                    <button class="btn-mini" style="background:#2196F3; color:#fff; border:none; padding:3px 8px; border-radius:3px; cursor:pointer; font-size:11px;" 
-                        title="Support" onclick="event.stopPropagation(); ui.openSupportModal('${v.id}')">🛡️</button>
-                `;
-            }
+            const actionHtml = isSelected
+                ? `<span style="color:#999; font-style:italic;">(Current)</span>`
+                : `<button class="btn-mini" style="background:#4CAF50; color:#fff; border:none; padding:3px 8px; border-radius:3px; cursor:pointer; font-size:11px;" onclick="event.stopPropagation(); ui.openMarketModal('${v.id}')">🛒</button>
+                   <button class="btn-mini" style="background:#2196F3; color:#fff; border:none; padding:3px 8px; border-radius:3px; cursor:pointer; font-size:11px;" onclick="event.stopPropagation(); ui.openSupportModal('${v.id}')">🛡️</button>`;
 
+            const groupIcon = this.getGroupIcon ? this.getGroupIcon(v.group || 'balanced') : (v.group === 'offense' ? '⚔️' : v.group === 'defense' ? '🛡️' : '⚖️');
             const busy = v.queues.build.length > 0 ? "🔨" : "";
-            const group = v.group || 'balanced';
-            const groupIcon = this.getGroupIcon(group);
 
             html += `
-            <tr style="${bg} ${border} cursor:pointer; border-bottom:1px solid #eee; height:32px;" 
-                onclick="ui.switchVillage('${v.id}', 'overview')"
-                onmouseenter="this.style.backgroundColor='#f7f7f7'"
-                onmouseleave="this.style.backgroundColor='${isSelected ? '#e3f2fd' : '#fff'}'">
-                
+            <tr class="overview-row ${bgClass}" style="cursor:pointer; border-bottom:1px solid #eee; height:32px; ${isSelected ? 'border-left: 3px solid #2196F3;' : 'border-left: 3px solid transparent;'}" 
+                onclick="ui.switchVillage('${v.id}', 'overview')">
                 <td style="padding:0 8px; white-space:nowrap; vertical-align:middle;">
-                    <button class="btn-mini" style="background:none; border:none; cursor:pointer; font-size:14px; margin-right:2px;" 
-                        onclick="event.stopPropagation(); ui.toggleGroup('${v.id}')" 
-                        title="Toggle: Offense / Defense / Balanced">
-                        ${groupIcon}
-                    </button>
+                    <button class="btn-mini" style="background:none; border:none; cursor:pointer; font-size:14px; margin-right:2px;" onclick="event.stopPropagation(); ui.toggleGroup('${v.id}')">${groupIcon}</button>
                     <b>${v.name}</b> <span style="color:#666; font-size:10px;">(${v.x}|${v.y})</span> ${busy}
                 </td>
-                <td style="padding:0 8px; vertical-align:middle; color:#666;">${distDisplay}</td>
+                <td style="padding:0 8px; vertical-align:middle; color:#333; font-weight:bold;">${continentStr}</td>
+                <td style="padding:0 8px; vertical-align:middle; color:#666;">${isSelected ? "-" : dist.toFixed(1)}</td>
                 <td style="padding:0 8px; vertical-align:middle;">${v.points}</td>
                 <td style="padding:0 8px; white-space:nowrap; vertical-align:middle;">${resHtml}</td>
                 <td style="padding:0 8px; color:${popColor}; vertical-align:middle;">${popUsed}/${popMax}</td>
@@ -1985,8 +2020,7 @@ const ui = {
             </tr>`;
         });
 
-        html += `</tbody></table></div>`;
-        container.innerHTML = html;
+        return html;
     },
 
     // --- Helper for Support Button ---
